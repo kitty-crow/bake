@@ -14,10 +14,10 @@ export interface BakeCoreEngine {
   decide(kind: number, flags: number, auxiliary0: number, auxiliary1: number): number;
 }
 
-interface BakeWasmExports extends WebAssembly.Exports {
+type BakeWasmExports = WebAssembly.Exports & {
   bakeCoreVersion(): number;
   bakeDecideFact(kind: number, flags: number, auxiliary0: number, auxiliary1: number): number;
-}
+};
 
 class HostedBakeCore implements BakeCoreEngine {
   readonly implementation = "host" as const;
