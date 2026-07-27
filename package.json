@@ -28,6 +28,7 @@
     "clean:bootstrap": "node -e \"const fs=require('node:fs');for(const p of ['build/self-host','build/baguette-generated','dist-wasm'])fs.rmSync(p,{recursive:true,force:true})\"",
     "build": "npm run clean && tsc -p tsconfig.json",
     "postbuild": "bun ./scripts/make-cli-executable.ts",
+    "prepare": "npm run build",
     "bootstrap": "bun ./src/bootstrap.ts",
     "benchmark:self-host": "bun ./scripts/run-self-host-benchmark.ts",
     "benchmark:self-host:raw": "bun ./scripts/benchmark-self-host.ts",
