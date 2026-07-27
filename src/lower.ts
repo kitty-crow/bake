@@ -1,6 +1,23 @@
 import ts from "typescript";
+import type { BakeCoreEngine } from "./core-engine";
+import {
+  BAKE_ACTION_LOWER,
+  BAKE_ACTION_WARNING,
+  BAKE_FACT_DESTRUCTURE,
+  BAKE_FACT_FOR_OF,
+  BAKE_FACT_NULLISH,
+  BAKE_FLAG_AWAIT,
+  BAKE_FLAG_IMPURE,
+  BAKE_FLAG_NOT_ARRAY_LIKE,
+  BAKE_FLAG_UNDEFINED_SENSITIVE,
+  BAKE_FLAG_UNSUPPORTED_BINDING,
+  BAKE_FLAG_UNSUPPORTED_INITIALIZER,
+  bakeDecisionAction,
+  bakeDecisionDiagnostic,
+  bakeDecisionPayload
+} from "./core/protocol";
 import { diagnosticAt } from "./diagnostics";
-import { BAKE_DIAGNOSTIC_CODES } from "./target";
+import { bakeDiagnosticCode } from "./target";
 import type { BakeDiagnostic } from "./types";
 
 interface LowerResult {
@@ -23,20 +40,6 @@ function isPureExpression(expression: ts.Expression): boolean {
     ts.isElementAccessExpression(expression) && isPureExpression(expression.expression) && Boolean(expression.argumentExpression && isPureExpression(expression.argumentExpression));
 }
 
-function containsSymbol(source: ts.Node, checker: ts.TypeChecker, symbol: ts.Symbol): boolean {
-  let found = false;
-  const walk = (node: ts.Node): void => {
-    if (found) return;
-    if (ts.isIdentifier(node) && checker.getSymbolAtLocation(node) === symbol) {
-      found = true;
-      return;
-    }
-    ts.forEachChild(node, walk);
-  };
-  walk(source);
-  return found;
-}
-
 function isArrayLikeExpression(expression: ts.Expression, checker: ts.TypeChecker): boolean {
   const type = checker.getTypeAtLocation(expression);
   return checker.isArrayType(type) || checker.isTupleType(type);
@@ -45,7 +48,8 @@ function isArrayLikeExpression(expression: ts.Expression, checker: ts.TypeChecke
 export function lowerSourceFile(
   root: string,
   source: ts.SourceFile,
-  checker: ts.TypeChecker
+  checker: ts.TypeChecker,
+  core: BakeCoreEngine
 ): LowerResult {
   const diagnostics: BakeDiagnostic[] = [];
   let changed = false;
@@ -71,44 +75,44 @@ export function lowerSourceFile(
       collectNullishOperands(node, operands);
       if (operands.length < 2) return undefined;
 
-      let effectiveLength = operands.length;
+      let flags = 0;
+      let firstNonNullable = -1;
       for (let index = 0; index < operands.length - 1; index++) {
         const operand = operands[index]!;
-        if (!isPureExpression(operand)) {
-          diagnostics.push(diagnosticAt(
-            root,
-            node,
-            BAKE_DIAGNOSTIC_CODES.unsafeLowering,
-            "warning",
-            "Bake left this nullish-coalescing expression unchanged because an operand may have side effects.",
-            "Assign each side-effecting operand to a typed local first. Bake can then lower the chain without evaluating it twice."
-          ));
-          return node;
-        }
+        if (!isPureExpression(operand)) flags |= BAKE_FLAG_IMPURE;
 
         const operandType = checker.getTypeAtLocation(operand);
         const parts = operandType.isUnion() ? operandType.types : [operandType];
         const hasNull = parts.some(part => Boolean(part.flags & ts.TypeFlags.Null));
         const hasUndefined = parts.some(part => Boolean(part.flags & ts.TypeFlags.Undefined));
-
-        if (hasUndefined) {
-          diagnostics.push(diagnosticAt(
-            root,
-            node,
-            BAKE_DIAGNOSTIC_CODES.unsafeLowering,
-            "warning",
-            "Bake did not lower this undefined-sensitive nullish expression.",
-            "Replace undefined with an explicit nullable or tagged native representation before Baguette compilation."
-          ));
-          return node;
-        }
-
+        if (hasUndefined) flags |= BAKE_FLAG_UNDEFINED_SENSITIVE;
         if (!hasNull) {
-          effectiveLength = index + 1;
+          firstNonNullable = index;
           break;
         }
       }
 
+      const decision = core.decide(BAKE_FACT_NULLISH, flags, operands.length, firstNonNullable);
+      const action = bakeDecisionAction(decision);
+      if (action === BAKE_ACTION_WARNING) {
+        const impure = (flags & BAKE_FLAG_IMPURE) !== 0;
+        diagnostics.push(diagnosticAt(
+          root,
+          node,
+          bakeDiagnosticCode(bakeDecisionDiagnostic(decision)),
+          "warning",
+          impure
+            ? "Bake left this nullish-coalescing expression unchanged because an operand may have side effects."
+            : "Bake did not lower this undefined-sensitive nullish expression.",
+          impure
+            ? "Assign each side-effecting operand to a typed local first. Bake can then lower the chain without evaluating it twice."
+            : "Replace undefined with an explicit nullable or tagged native representation before Baguette compilation."
+        ));
+        return node;
+      }
+      if (action !== BAKE_ACTION_LOWER) return undefined;
+
+      const effectiveLength = bakeDecisionPayload(decision);
       const effectiveOperands = operands.slice(0, effectiveLength);
       const visitedOperands = effectiveOperands.map(operand => ts.visitNode(operand, visitor) as ts.Expression);
       let lowered: ts.Expression = visitedOperands[visitedOperands.length - 1]!;
@@ -128,11 +132,22 @@ export function lowerSourceFile(
     };
 
     const lowerForOf = (node: ts.ForOfStatement): ts.Statement | undefined => {
-      if (node.awaitModifier || !isArrayLikeExpression(node.expression, checker)) return undefined;
-      if (!ts.isVariableDeclarationList(node.initializer) || node.initializer.declarations.length !== 1) return undefined;
-      const declaration = node.initializer.declarations[0]!;
-      if (!ts.isIdentifier(declaration.name)) return undefined;
+      let flags = 0;
+      if (node.awaitModifier) flags |= BAKE_FLAG_AWAIT;
+      if (!isArrayLikeExpression(node.expression, checker)) flags |= BAKE_FLAG_NOT_ARRAY_LIKE;
+      if (!ts.isVariableDeclarationList(node.initializer) || node.initializer.declarations.length !== 1) {
+        flags |= BAKE_FLAG_UNSUPPORTED_INITIALIZER;
+      } else {
+        const declaration = node.initializer.declarations[0]!;
+        if (!ts.isIdentifier(declaration.name)) flags |= BAKE_FLAG_UNSUPPORTED_INITIALIZER;
+      }
 
+      const decision = core.decide(BAKE_FACT_FOR_OF, flags, 0, 0);
+      if (bakeDecisionAction(decision) !== BAKE_ACTION_LOWER) return undefined;
+
+      const declarationList = node.initializer as ts.VariableDeclarationList;
+      const declaration = declarationList.declarations[0]!;
+      const declarationName = declaration.name as ts.Identifier;
       changed = true;
       const id = serial++;
       const arrayName = factory.createUniqueName(`__bake_array_${id}`);
@@ -152,12 +167,12 @@ export function lowerSourceFile(
         undefined,
         factory.createVariableDeclarationList([
           factory.createVariableDeclaration(
-            declaration.name,
+            declarationName,
             declaration.exclamationToken,
             declaration.type,
             factory.createElementAccessExpression(arrayName, indexName)
           )
-        ], node.initializer.flags)
+        ], declarationList.flags)
       );
       const originalBody = ts.visitNode(node.statement, visitor) as ts.Statement;
       const statements = ts.isBlock(originalBody) ? [itemDeclaration, ...originalBody.statements] : [itemDeclaration, originalBody];
@@ -177,20 +192,26 @@ export function lowerSourceFile(
     };
 
     const lowerVariableStatement = (node: ts.VariableStatement): ts.Statement[] | undefined => {
-      const unsupported = node.declarationList.declarations.find(declaration => !ts.isIdentifier(declaration.name) && bindingNeedsManualLowering(declaration.name));
-      if (unsupported) {
+      const declarations = node.declarationList.declarations;
+      if (!declarations.some(declaration => !ts.isIdentifier(declaration.name))) return undefined;
+
+      const unsupported = declarations.find(declaration => !ts.isIdentifier(declaration.name) && bindingNeedsManualLowering(declaration.name));
+      const flags = unsupported ? BAKE_FLAG_UNSUPPORTED_BINDING : 0;
+      const decision = core.decide(BAKE_FACT_DESTRUCTURE, flags, 0, 0);
+      const action = bakeDecisionAction(decision);
+      if (action === BAKE_ACTION_WARNING && unsupported) {
         diagnostics.push(diagnosticAt(
           root,
           unsupported,
-          BAKE_DIAGNOSTIC_CODES.unsafeLowering,
+          bakeDiagnosticCode(bakeDecisionDiagnostic(decision)),
           "warning",
           "Bake left destructuring with defaults, rest elements or nested unsupported bindings unchanged.",
           "Rewrite it as explicit indexed or property assignments so each native value has a deterministic source."
         ));
         return undefined;
       }
-      const declarations = node.declarationList.declarations;
-      if (!declarations.some(declaration => !ts.isIdentifier(declaration.name))) return undefined;
+      if (action !== BAKE_ACTION_LOWER) return undefined;
+
       const output: ts.Statement[] = [];
       for (const declaration of declarations) {
         if (ts.isIdentifier(declaration.name) || !declaration.initializer) {
@@ -205,56 +226,25 @@ export function lowerSourceFile(
           factory.createVariableDeclaration(tempName, undefined, undefined, ts.visitNode(declaration.initializer, visitor) as ts.Expression)
         ], ts.NodeFlags.Const)));
 
-        const emitBinding = (name: ts.BindingName, access: ts.Expression, initializer?: ts.Expression): void => {
+        const emitBinding = (name: ts.BindingName, access: ts.Expression): void => {
           if (ts.isIdentifier(name)) {
-            const value = initializer
-              ? factory.createConditionalExpression(
-                  factory.createBinaryExpression(access, factory.createToken(ts.SyntaxKind.EqualsEqualsEqualsToken), factory.createIdentifier("undefined")),
-                  factory.createToken(ts.SyntaxKind.QuestionToken),
-                  ts.visitNode(initializer, visitor) as ts.Expression,
-                  factory.createToken(ts.SyntaxKind.ColonToken),
-                  access
-                )
-              : access;
             output.push(factory.createVariableStatement(node.modifiers, factory.createVariableDeclarationList([
-              factory.createVariableDeclaration(name, undefined, undefined, value)
+              factory.createVariableDeclaration(name, undefined, undefined, access)
             ], node.declarationList.flags)));
             return;
           }
           if (ts.isObjectBindingPattern(name)) {
             for (const element of name.elements) {
-              if (element.dotDotDotToken) {
-                diagnostics.push(diagnosticAt(
-                  root,
-                  element,
-                  BAKE_DIAGNOSTIC_CODES.unsafeLowering,
-                  "warning",
-                  "Object rest destructuring was left for manual rewriting.",
-                  "Construct the remaining object explicitly so its native layout is deterministic."
-                ));
-                continue;
-              }
               const propertyName = element.propertyName ?? element.name;
               const next = ts.isIdentifier(propertyName) || ts.isStringLiteralLike(propertyName) || ts.isNumericLiteral(propertyName)
                 ? factory.createElementAccessExpression(access, ts.isIdentifier(propertyName) ? factory.createStringLiteral(propertyName.text) : propertyName)
                 : access;
-              emitBinding(element.name, next, element.initializer);
+              emitBinding(element.name, next);
             }
           } else {
             name.elements.forEach((element, index) => {
               if (!ts.isBindingElement(element)) return;
-              if (element.dotDotDotToken) {
-                diagnostics.push(diagnosticAt(
-                  root,
-                  element,
-                  BAKE_DIAGNOSTIC_CODES.unsafeLowering,
-                  "warning",
-                  "Array rest destructuring was left for manual rewriting.",
-                  "Copy the required suffix into an explicitly typed array."
-                ));
-                return;
-              }
-              emitBinding(element.name, factory.createElementAccessExpression(access, factory.createNumericLiteral(index)), element.initializer);
+              emitBinding(element.name, factory.createElementAccessExpression(access, factory.createNumericLiteral(index)));
             });
           }
         };
