@@ -1,7 +1,10 @@
 node_modules/
 dist/
 dist-test/
+dist-wasm/
+build/
 coverage/
 *.tsbuildinfo
 *.log
+*.wasm
 .DS_Store
