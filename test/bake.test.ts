@@ -7,7 +7,9 @@ import { bake } from "../src/index";
 import { createBakeCoreEngine } from "../src/core-engine";
 import {
   BAKE_ACTION_LOWER,
+  BAKE_ACTION_NONE,
   BAKE_ACTION_WARNING,
+  BAKE_FACT_EXCEPTION,
   BAKE_FACT_NULLISH,
   BAKE_FLAG_IMPURE,
   bakeDecisionAction,
@@ -76,6 +78,34 @@ test("lowers long nullish chains with linear output growth", () => {
   }
 });
 
+test("passes Baguette-supported try and throw syntax through unchanged", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "bake-exception-"));
+  try {
+    fs.writeFileSync(path.join(root, "tsconfig.json"), JSON.stringify({
+      compilerOptions: { strict: true, target: "ES2022", module: "ESNext", types: [] },
+      files: ["input.ts"]
+    }, null, 2));
+    fs.writeFileSync(
+      path.join(root, "input.ts"),
+      "export function positive(value: number): number {\n  try {\n    if (value < 0) throw new RangeError(\"negative\");\n    return value;\n  } finally {\n  }\n}\n"
+    );
+
+    const result = bake({
+      project: path.join(root, "tsconfig.json"),
+      outDir: "out",
+      validateOnly: false,
+      failOnWarnings: false
+    });
+    assert.equal(result.success, true);
+    assert.ok(!result.diagnostics.some(item => item.code === "BK2201"));
+    const output = fs.readFileSync(path.join(root, "out", "input.ts"), "utf8");
+    assert.match(output, /try/);
+    assert.match(output, /throw new RangeError/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("rejects any and reports unsupported native features", () => {
   const result = bake({
     project: path.join(fixtureRoot, "unsupported", "tsconfig.json"),
@@ -86,7 +116,7 @@ test("rejects any and reports unsupported native features", () => {
   assert.equal(result.success, false);
   assert.ok(result.diagnostics.some(item => item.code === "BK1001"));
   assert.ok(result.diagnostics.some(item => item.code === "BK2101"));
-  assert.ok(result.diagnostics.some(item => item.code === "BK2201"));
+  assert.ok(!result.diagnostics.some(item => item.code === "BK2201"));
 });
 
 test("hosted core exposes the policy that is compiled to Wasm", () => {
@@ -97,6 +127,9 @@ test("hosted core exposes the policy that is compiled to Wasm", () => {
 
   const unsafe = core.decide(BAKE_FACT_NULLISH, BAKE_FLAG_IMPURE, 4, -1);
   assert.equal(bakeDecisionAction(unsafe), BAKE_ACTION_WARNING);
+
+  const exception = core.decide(BAKE_FACT_EXCEPTION, 0, 0, 0);
+  assert.equal(bakeDecisionAction(exception), BAKE_ACTION_NONE);
 });
 
 test("Bake can bake its dependency-free core", () => {
