@@ -96,9 +96,9 @@ export function decideBakeFact(
       if ((flags & BAKE_FLAG_IMPURE) !== 0 || (flags & BAKE_FLAG_UNDEFINED_SENSITIVE) !== 0) {
         return warning(BAKE_DIAGNOSTIC_UNSAFE_LOWERING);
       }
-      const operandCount: BakeWord = auxiliary0;
+      const operandCount: BakeWord = auxiliary0 >>> 0;
       if (operandCount === 0) return packBakeDecision(BAKE_ACTION_NONE, BAKE_DIAGNOSTIC_NONE, 0);
-      const firstNonNullable: BakeWord = auxiliary1;
+      const firstNonNullable: BakeWord = auxiliary1 >>> 0;
       const effectiveLength: BakeWord = firstNonNullable !== BAKE_NO_INDEX && firstNonNullable < operandCount
         ? firstNonNullable + 1
         : operandCount;
