@@ -1,0 +1,4 @@
+{
+  "compilerOptions": { "strict": false, "target": "ES2022", "module": "ESNext" },
+  "files": ["input.ts"]
+}

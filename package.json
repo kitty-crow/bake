@@ -1,0 +1,40 @@
+{
+  "name": "@kitty-crow/bake",
+  "version": "0.1.0",
+  "description": "Pre-compile TypeScript into the deterministic subset accepted by Baguette.",
+  "license": "MIT",
+  "author": {
+    "name": "Kitty Crow",
+    "url": "https://kittycrow.dev"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kitty-crow/bake.git"
+  },
+  "bin": {
+    "bake": "dist/cli.js"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "docs",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "clean": "node -e \"const fs=require('node:fs');fs.rmSync('dist',{recursive:true,force:true});fs.rmSync('dist-test',{recursive:true,force:true})\"",
+    "build": "npm run clean && tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && tsc -p tsconfig.test.json && node --test dist-test/test/*.test.js"
+  },
+  "dependencies": {
+    "typescript": "^5.8.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}
