@@ -12,8 +12,12 @@
   "intrinsicModules": [
     "build/self-host/intrinsics.ts"
   ],
-  "typeAliases": {},
-  "abiTypes": {},
+  "typeAliases": {
+    "BakeWord": "u32"
+  },
+  "abiTypes": {
+    "BakeWord": "number"
+  },
   "abi": {
     "exports": [
       "bakeCoreVersion",
