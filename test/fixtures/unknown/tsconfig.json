@@ -1,4 +1,9 @@
 {
-  "compilerOptions": { "strict": true, "target": "ES2022", "module": "ESNext" },
+  "compilerOptions": {
+    "strict": true,
+    "target": "ES2022",
+    "module": "ESNext",
+    "types": []
+  },
   "files": ["input.ts"]
 }
