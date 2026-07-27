@@ -1,11 +1,9 @@
+import { loadU32, storeU32 } from "./intrinsics";
 import {
   BAKE_CORE_ABI_VERSION,
   BAKE_CORE_RECORD_WORDS,
   decideBakeFact
 } from "./protocol";
-
-declare function loadU32(memoryHandle: number, at: number): number;
-declare function storeU32(memoryHandle: number, at: number, value: number): void;
 
 const WORD_BYTES = 4;
 const RECORD_BYTES = BAKE_CORE_RECORD_WORDS * WORD_BYTES;
