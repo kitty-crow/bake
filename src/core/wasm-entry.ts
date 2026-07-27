@@ -4,29 +4,36 @@ import {
   BAKE_CORE_RECORD_WORDS,
   decideBakeFact
 } from "./protocol";
+import type { BakeWord } from "./protocol";
 
-const WORD_BYTES = 4;
-const RECORD_BYTES = BAKE_CORE_RECORD_WORDS * WORD_BYTES;
+const WORD_BYTES: BakeWord = 4;
+const RECORD_BYTES: BakeWord = BAKE_CORE_RECORD_WORDS * WORD_BYTES;
 
-export function bakeCoreVersion(): number {
+export function bakeCoreVersion(): BakeWord {
   return BAKE_CORE_ABI_VERSION;
 }
 
-export function bakeDecideFact(kind: number, flags: number, auxiliary0: number, auxiliary1: number): number {
+export function bakeDecideFact(
+  kind: BakeWord,
+  flags: BakeWord,
+  auxiliary0: BakeWord,
+  auxiliary1: BakeWord
+): BakeWord {
   return decideBakeFact(kind, flags, auxiliary0, auxiliary1);
 }
 
-export function bakeProcessFacts(inputPointer: number, factCount: number, outputPointer: number): number {
-  if (inputPointer < 0 || outputPointer < 0 || factCount < 0) return -1;
-
-  for (let index = 0; index < factCount; index++) {
-    const input = inputPointer + index * RECORD_BYTES;
-    const output = outputPointer + index * WORD_BYTES;
-    const kind = loadU32(0, input);
-    const flags = loadU32(0, input + WORD_BYTES);
-    const auxiliary0 = loadU32(0, input + WORD_BYTES * 2);
-    const auxiliary1Unsigned = loadU32(0, input + WORD_BYTES * 3);
-    const auxiliary1 = auxiliary1Unsigned === 0xffffffff ? -1 : auxiliary1Unsigned;
+export function bakeProcessFacts(
+  inputPointer: BakeWord,
+  factCount: BakeWord,
+  outputPointer: BakeWord
+): BakeWord {
+  for (let index: BakeWord = 0; index < factCount; index++) {
+    const input: BakeWord = inputPointer + index * RECORD_BYTES;
+    const output: BakeWord = outputPointer + index * WORD_BYTES;
+    const kind: BakeWord = loadU32(0, input);
+    const flags: BakeWord = loadU32(0, input + WORD_BYTES);
+    const auxiliary0: BakeWord = loadU32(0, input + WORD_BYTES * 2);
+    const auxiliary1: BakeWord = loadU32(0, input + WORD_BYTES * 3);
     storeU32(0, output, decideBakeFact(kind, flags, auxiliary0, auxiliary1));
   }
 
