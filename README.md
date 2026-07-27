@@ -42,7 +42,8 @@ It currently:
 
 - rejects explicit and inferred `any`;
 - rejects unresolved `unknown` and proposes a reviewable interface or union from static guards and property use;
-- mirrors Baguette's diagnostics for dynamic imports, external runtime imports, generators, exceptions, unsupported async closures and JavaScript-host globals;
+- mirrors Baguette's diagnostics for dynamic imports, external runtime imports, generators, unsupported async closures and JavaScript-host globals;
+- passes Baguette-supported syntax through unchanged when no Bake lowering is required, including `try` and `throw`;
 - lowers simple object and array destructuring;
 - lowers array and tuple `for...of` loops to indexed loops;
 - lowers side-effect-free nullish coalescing with linear output growth;
@@ -165,7 +166,7 @@ src/parser.ts:4:30: ERROR BK1002: `unknown` remains unresolved at the Bake to Ba
 3. Bake may suggest a type, but never silently invent one.
 4. `any` is always an error.
 5. Baguette owns the native language contract and remains the final validator.
-6. Features without a safe lowering are reported with a concrete migration path.
+6. Baguette-supported constructs are passed through when Bake has no safe or necessary lowering.
 7. Hosted and Wasm core decisions must remain bit-for-bit equivalent.
 
 See [Architecture](docs/architecture.md) and [Target contract](docs/target-contract.md).
