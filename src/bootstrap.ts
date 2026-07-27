@@ -64,10 +64,11 @@ function main(): void {
     fail(`Baguette compiler was not found at ${compiler}. Set BAGUETTE_COMPILER or clone Baguette beside Bake.`);
   }
 
+  const baguetteRoot = path.dirname(path.dirname(compiler));
   const command = spawnSync(
     "bun",
     [compiler, "--config", path.join(root, "baguette.config.json")],
-    { cwd: root, env: process.env, stdio: "inherit" }
+    { cwd: baguetteRoot, env: process.env, stdio: "inherit" }
   );
   if (command.error) fail(`Could not start Baguette: ${command.error.message}`);
   if (command.status !== 0) fail(`Baguette exited with status ${command.status ?? -1}`);
