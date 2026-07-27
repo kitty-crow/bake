@@ -1,0 +1,62 @@
+name: Bake self-host
+
+on:
+  push:
+    branches:
+      - main
+      - agent/baguette-self-host
+  pull_request:
+
+jobs:
+  host-and-bootstrap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out Bake
+        uses: actions/checkout@v4
+        with:
+          path: bake
+
+      - name: Check out Baguette
+        uses: actions/checkout@v4
+        with:
+          repository: kitty-crow/baguette
+          path: baguette
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install Bake dependencies
+        working-directory: bake
+        run: npm install
+
+      - name: Install Baguette dependencies
+        working-directory: baguette
+        run: npm install
+
+      - name: Type-check Bake
+        working-directory: bake
+        run: npm run check
+
+      - name: Test hosted Bake
+        working-directory: bake
+        run: npm test
+
+      - name: Self-bake and compile the Wasm core
+        working-directory: bake
+        env:
+          BAGUETTE_COMPILER: ../baguette/src/compiler.ts
+        run: npm run bootstrap
+
+      - name: Test with the Wasm core required
+        working-directory: bake
+        env:
+          BAKE_ENGINE: wasm
+        run: npm test
