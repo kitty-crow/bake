@@ -54,67 +54,75 @@ export function lowerSourceFile(
   const transformer: ts.TransformerFactory<ts.SourceFile> = context => {
     const factory = context.factory;
 
+    const collectNullishOperands = (expression: ts.Expression, operands: ts.Expression[]): void => {
+      const unwrapped = ts.isParenthesizedExpression(expression) ? expression.expression : expression;
+      if (ts.isBinaryExpression(unwrapped) && unwrapped.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken) {
+        collectNullishOperands(unwrapped.left, operands);
+        collectNullishOperands(unwrapped.right, operands);
+        return;
+      }
+      operands.push(expression);
+    };
+
     const lowerNullish = (node: ts.BinaryExpression): ts.Expression | undefined => {
       if (node.operatorToken.kind !== ts.SyntaxKind.QuestionQuestionToken) return undefined;
 
-      if (
-        ts.isBinaryExpression(node.left) &&
-        node.left.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken
-      ) {
-        diagnostics.push(diagnosticAt(
-          root,
-          node,
-          BAKE_DIAGNOSTIC_CODES.unsafeLowering,
-          "warning",
-          "Bake left this nullish-coalescing chain unchanged to prevent exponential source expansion.",
-          "Assign each fallback step to a typed local until Bake has a linear nullish-chain lowering pass."
-        ));
-        return node;
+      const operands: ts.Expression[] = [];
+      collectNullishOperands(node, operands);
+      if (operands.length < 2) return undefined;
+
+      for (let index = 0; index < operands.length - 1; index++) {
+        const operand = operands[index]!;
+        if (!isPureExpression(operand)) {
+          diagnostics.push(diagnosticAt(
+            root,
+            node,
+            BAKE_DIAGNOSTIC_CODES.unsafeLowering,
+            "warning",
+            "Bake left this nullish-coalescing expression unchanged because an operand may have side effects.",
+            "Assign each side-effecting operand to a typed local first. Bake can then lower the chain without evaluating it twice."
+          ));
+          return node;
+        }
+
+        const operandType = checker.getTypeAtLocation(operand);
+        const parts = operandType.isUnion() ? operandType.types : [operandType];
+        const hasNull = parts.some(part => Boolean(part.flags & ts.TypeFlags.Null));
+        const hasUndefined = parts.some(part => Boolean(part.flags & ts.TypeFlags.Undefined));
+
+        if (hasUndefined) {
+          diagnostics.push(diagnosticAt(
+            root,
+            node,
+            BAKE_DIAGNOSTIC_CODES.unsafeLowering,
+            "warning",
+            "Bake did not lower this undefined-sensitive nullish expression.",
+            "Replace undefined with an explicit nullable or tagged native representation before Baguette compilation."
+          ));
+          return node;
+        }
+
+        if (!hasNull) {
+          changed = true;
+          return ts.visitNode(operand, visitor) as ts.Expression;
+        }
       }
 
-      if (!isPureExpression(node.left)) {
-        diagnostics.push(diagnosticAt(
-          root,
-          node,
-          BAKE_DIAGNOSTIC_CODES.unsafeLowering,
-          "warning",
-          "Bake left this nullish-coalescing expression unchanged because its left operand may have side effects.",
-          "Assign the left operand to a typed local first. Bake can then lower the expression without evaluating it twice."
-        ));
-        return undefined;
-      }
-
-      const leftType = checker.getTypeAtLocation(node.left);
-      const parts = leftType.isUnion() ? leftType.types : [leftType];
-      const hasNull = parts.some(part => Boolean(part.flags & ts.TypeFlags.Null));
-      const hasUndefined = parts.some(part => Boolean(part.flags & ts.TypeFlags.Undefined));
-      const visitedLeft = ts.visitNode(node.left, visitor) as ts.Expression;
-      const visitedRight = ts.visitNode(node.right, visitor) as ts.Expression;
-
-      if (!hasNull && !hasUndefined) {
-        changed = true;
-        return visitedLeft;
-      }
-      if (hasUndefined) {
-        diagnostics.push(diagnosticAt(
-          root,
-          node,
-          BAKE_DIAGNOSTIC_CODES.unsafeLowering,
-          "warning",
-          "Bake did not lower this undefined-sensitive nullish expression.",
-          "Replace undefined with an explicit nullable or tagged native representation before Baguette compilation."
-        ));
-        return undefined;
+      const visitedOperands = operands.map(operand => ts.visitNode(operand, visitor) as ts.Expression);
+      let lowered: ts.Expression = visitedOperands[visitedOperands.length - 1]!;
+      for (let index = visitedOperands.length - 2; index >= 0; index--) {
+        const operand = visitedOperands[index]!;
+        lowered = factory.createConditionalExpression(
+          factory.createBinaryExpression(operand, factory.createToken(ts.SyntaxKind.ExclamationEqualsEqualsToken), factory.createNull()),
+          factory.createToken(ts.SyntaxKind.QuestionToken),
+          operand,
+          factory.createToken(ts.SyntaxKind.ColonToken),
+          lowered
+        );
       }
 
       changed = true;
-      return factory.createConditionalExpression(
-        factory.createBinaryExpression(visitedLeft, factory.createToken(ts.SyntaxKind.ExclamationEqualsEqualsToken), factory.createNull()),
-        factory.createToken(ts.SyntaxKind.QuestionToken),
-        visitedLeft,
-        factory.createToken(ts.SyntaxKind.ColonToken),
-        visitedRight
-      );
+      return lowered;
     };
 
     const lowerForOf = (node: ts.ForOfStatement): ts.Statement | undefined => {
