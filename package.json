@@ -1,6 +1,6 @@
 {
   "name": "@kitty-crow/bake",
-  "version": "0.1.0",
+  "version": "0.2.0-dev.0",
   "description": "Pre-compile TypeScript into the deterministic subset accepted by Baguette.",
   "license": "MIT",
   "author": {
@@ -18,15 +18,19 @@
   "types": "dist/index.d.ts",
   "files": [
     "dist",
+    "dist-wasm",
     "docs",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
     "clean": "node -e \"const fs=require('node:fs');fs.rmSync('dist',{recursive:true,force:true});fs.rmSync('dist-test',{recursive:true,force:true})\"",
+    "clean:bootstrap": "node -e \"const fs=require('node:fs');for(const p of ['build/self-host','build/baguette-generated','dist-wasm'])fs.rmSync(p,{recursive:true,force:true})\"",
     "build": "npm run clean && tsc -p tsconfig.json",
-    "check": "tsc -p tsconfig.json --noEmit",
-    "test": "npm run build && tsc -p tsconfig.test.json && node --test dist-test/test/*.test.js"
+    "bootstrap": "bun ./src/bootstrap.ts",
+    "check": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.core.json --noEmit",
+    "test": "npm run build && tsc -p tsconfig.test.json && node --test dist-test/test/*.test.js",
+    "test:self-host": "npm run bootstrap && BAKE_ENGINE=wasm npm test"
   },
   "dependencies": {
     "typescript": "^5.8.3"
@@ -35,6 +39,7 @@
     "@types/node": "^22.15.0"
   },
   "engines": {
+    "bun": ">=1.1.0",
     "node": ">=22.0.0"
   }
 }
