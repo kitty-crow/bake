@@ -1,0 +1,3 @@
+# JavaScript in this repository is generated compiler output, not authored source.
+*.js linguist-generated=true
+*.js.map linguist-generated=true
