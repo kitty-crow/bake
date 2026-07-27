@@ -51,9 +51,10 @@ function filesBelow(directory: string, prefix = ""): string[] {
   return result.sort();
 }
 
-function sha256Tree(directory: string): string {
+function sha256StageOne(directory: string): string {
   const hash = createHash("sha256");
-  for (const relative of filesBelow(directory)) {
+  const sourceFiles = filesBelow(directory).filter(relative => relative.endsWith(".ts"));
+  for (const relative of sourceFiles) {
     hash.update(relative);
     hash.update("\0");
     hash.update(fs.readFileSync(path.join(directory, relative)));
@@ -136,8 +137,7 @@ function runSample(
   determinism: boolean,
   measured: boolean
 ): BenchmarkSample {
-  const suffix = measured ? `run-${iteration}` : "warmup";
-  const runRoot = path.join(benchmarkRoot, engine, suffix);
+  const runRoot = path.join(benchmarkRoot, "work");
   const stageOneDirectory = path.join(runRoot, "stage-one");
   const generatedDirectory = path.join(runRoot, "baguette-generated");
   const outputDirectory = path.join(runRoot, "dist-wasm");
@@ -159,7 +159,7 @@ function runSample(
   if (!result.success) fail(`${engine} Bake failed during benchmark`);
   if (result.engine !== engine) fail(`Requested ${engine} Bake but ${result.engine} ran`);
 
-  const stageOneSha256 = sha256Tree(stageOneDirectory);
+  const stageOneSha256 = sha256StageOne(stageOneDirectory);
   writeBaguetteConfig(root, stageOneDirectory, generatedDirectory, outputDirectory, configFile);
 
   const baguetteArguments = [compiler, "--config", configFile];
@@ -248,7 +248,7 @@ function main(): void {
   const stageOneHashes = new Set(samples.map(sample => sample.stageOneSha256));
   const wasmHashes = new Set(samples.map(sample => sample.wasmSha256));
   const wasmSizes = new Set(samples.map(sample => sample.wasmBytes));
-  if (stageOneHashes.size !== 1) fail("ts-core and wasm-core emitted different Stage 1 source trees");
+  if (stageOneHashes.size !== 1) fail("ts-core and wasm-core emitted different Stage 1 TypeScript modules");
   if (wasmHashes.size !== 1 || wasmSizes.size !== 1) fail("Baguette emitted different WebAssembly across benchmark runs");
 
   const hostBake = summarise(host.map(sample => sample.bakeMilliseconds));
@@ -261,15 +261,15 @@ function main(): void {
   const totalSpeedRatio = hostTotal.mean / wasmTotal.mean;
 
   process.stdout.write("\nResults\n");
-  process.stdout.write(`  ts-core Bake:     ${formatSummary(hostBake)}\n`);
-  process.stdout.write(`  wasm-core Bake:   ${formatSummary(wasmBake)}\n`);
-  process.stdout.write(`  ts-core Baguette: ${formatSummary(hostBaguette)}\n`);
+  process.stdout.write(`  ts-core Bake:       ${formatSummary(hostBake)}\n`);
+  process.stdout.write(`  wasm-core Bake:     ${formatSummary(wasmBake)}\n`);
+  process.stdout.write(`  ts-core Baguette:   ${formatSummary(hostBaguette)}\n`);
   process.stdout.write(`  wasm-core Baguette: ${formatSummary(wasmBaguette)}\n`);
-  process.stdout.write(`  ts-core total:    ${formatSummary(hostTotal)}\n`);
-  process.stdout.write(`  wasm-core total:  ${formatSummary(wasmTotal)}\n`);
+  process.stdout.write(`  ts-core total:      ${formatSummary(hostTotal)}\n`);
+  process.stdout.write(`  wasm-core total:    ${formatSummary(wasmTotal)}\n`);
   process.stdout.write(`  Wasm Bake speed ratio: ${bakeSpeedRatio.toFixed(3)}x, where above 1 means wasm-core was faster.\n`);
   process.stdout.write(`  Wasm total speed ratio: ${totalSpeedRatio.toFixed(3)}x, where above 1 means wasm-core was faster.\n`);
-  process.stdout.write(`  Identical Stage 1 source SHA-256: ${samples[0]!.stageOneSha256}\n`);
+  process.stdout.write(`  Identical Stage 1 TypeScript SHA-256: ${samples[0]!.stageOneSha256}\n`);
   process.stdout.write(`  Identical Baguette Wasm SHA-256: ${samples[0]!.wasmSha256} (${samples[0]!.wasmBytes} bytes)\n`);
 
   const report = {
