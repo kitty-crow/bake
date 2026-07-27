@@ -91,7 +91,7 @@ export function decideBakeFact(
     case BAKE_FACT_GENERATOR:
       return error(BAKE_DIAGNOSTIC_GENERATOR);
     case BAKE_FACT_EXCEPTION:
-      return error(BAKE_DIAGNOSTIC_EXCEPTION);
+      return packBakeDecision(BAKE_ACTION_NONE, BAKE_DIAGNOSTIC_NONE, 0);
     case BAKE_FACT_NULLISH: {
       if ((flags & BAKE_FLAG_IMPURE) !== 0 || (flags & BAKE_FLAG_UNDEFINED_SENSITIVE) !== 0) {
         return warning(BAKE_DIAGNOSTIC_UNSAFE_LOWERING);
