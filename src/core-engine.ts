@@ -24,7 +24,7 @@ class HostedBakeCore implements BakeCoreEngine {
   readonly version = BAKE_CORE_ABI_VERSION;
 
   decide(kind: number, flags: number, auxiliary0: number, auxiliary1: number): number {
-    return decideBakeFact(kind, flags, auxiliary0, auxiliary1);
+    return decideBakeFact(kind >>> 0, flags >>> 0, auxiliary0 >>> 0, auxiliary1 >>> 0) >>> 0;
   }
 }
 
@@ -39,14 +39,19 @@ class WasmBakeCore implements BakeCoreEngine {
     const memory = new WebAssembly.Memory({ initial: 64, maximum: 1024 });
     const instance = new WebAssembly.Instance(module, { env: { memory } });
     this.exports = instance.exports as BakeWasmExports;
-    this.version = this.exports.bakeCoreVersion();
+    this.version = this.exports.bakeCoreVersion() >>> 0;
     if (this.version !== BAKE_CORE_ABI_VERSION) {
       throw new Error(`Bake core ABI ${this.version} does not match host ABI ${BAKE_CORE_ABI_VERSION}`);
     }
   }
 
   decide(kind: number, flags: number, auxiliary0: number, auxiliary1: number): number {
-    return this.exports.bakeDecideFact(kind, flags, auxiliary0, auxiliary1);
+    return this.exports.bakeDecideFact(
+      kind >>> 0,
+      flags >>> 0,
+      auxiliary0 >>> 0,
+      auxiliary1 >>> 0
+    ) >>> 0;
   }
 }
 
