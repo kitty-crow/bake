@@ -71,6 +71,7 @@ export function lowerSourceFile(
       collectNullishOperands(node, operands);
       if (operands.length < 2) return undefined;
 
+      let effectiveLength = operands.length;
       for (let index = 0; index < operands.length - 1; index++) {
         const operand = operands[index]!;
         if (!isPureExpression(operand)) {
@@ -103,12 +104,13 @@ export function lowerSourceFile(
         }
 
         if (!hasNull) {
-          changed = true;
-          return ts.visitNode(operand, visitor) as ts.Expression;
+          effectiveLength = index + 1;
+          break;
         }
       }
 
-      const visitedOperands = operands.map(operand => ts.visitNode(operand, visitor) as ts.Expression);
+      const effectiveOperands = operands.slice(0, effectiveLength);
+      const visitedOperands = effectiveOperands.map(operand => ts.visitNode(operand, visitor) as ts.Expression);
       let lowered: ts.Expression = visitedOperands[visitedOperands.length - 1]!;
       for (let index = visitedOperands.length - 2; index >= 0; index--) {
         const operand = visitedOperands[index]!;
