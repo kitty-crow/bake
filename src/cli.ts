@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import path from "node:path";
+import type { BakeEngineMode } from "./core-engine";
 import { bake, printBakeResult } from "./index";
 
 interface ParsedArgs {
@@ -8,6 +9,8 @@ interface ParsedArgs {
   validateOnly: boolean;
   reportFile?: string;
   failOnWarnings: boolean;
+  engine: BakeEngineMode;
+  wasmFile?: string;
 }
 
 function valueAfter(args: string[], name: string): string | undefined {
@@ -17,8 +20,14 @@ function valueAfter(args: string[], name: string): string | undefined {
   return index >= 0 ? args[index + 1] : undefined;
 }
 
+function engineAfter(args: string[]): BakeEngineMode {
+  const value = valueAfter(args, "--engine") ?? process.env.BAKE_ENGINE ?? "auto";
+  if (value === "auto" || value === "host" || value === "wasm") return value;
+  throw new Error(`Invalid Bake engine ${JSON.stringify(value)}. Expected auto, host or wasm.`);
+}
+
 function usage(): string {
-  return `Bake 0.1.0\n\nUsage:\n  bake [--project tsconfig.json] [--out-dir build/bake]\n       [--validate-only] [--report bake-report.json] [--fail-on-warnings]\n\nBake pre-compiles TypeScript into the deterministic subset accepted by\nBaguette. It never embeds a JavaScript runtime, VM, interpreter or bytecode.\n`;
+  return `Bake 0.2.0-dev\n\nUsage:\n  bake [--project tsconfig.json] [--out-dir build/bake]\n       [--validate-only] [--report bake-report.json] [--fail-on-warnings]\n       [--engine auto|wasm|host] [--wasm-file dist-wasm/bake-core.wasm]\n\nBake pre-compiles TypeScript into the deterministic subset accepted by\nBaguette. The auto engine uses the self-baked WebAssembly core when present\nand otherwise falls back to the identical hosted core.\n`;
 }
 
 function parseArgs(args: string[]): ParsedArgs {
@@ -27,12 +36,15 @@ function parseArgs(args: string[]): ParsedArgs {
     process.exitCode = 0;
     throw new Error("__BAKE_HELP__");
   }
+  const wasmFile = valueAfter(args, "--wasm-file");
   return {
     project: path.resolve(valueAfter(args, "--project") ?? "tsconfig.json"),
     outDir: valueAfter(args, "--out-dir") ?? "build/bake",
     validateOnly: args.includes("--validate-only"),
     reportFile: valueAfter(args, "--report"),
-    failOnWarnings: args.includes("--fail-on-warnings")
+    failOnWarnings: args.includes("--fail-on-warnings"),
+    engine: engineAfter(args),
+    wasmFile: wasmFile ? path.resolve(wasmFile) : undefined
   };
 }
 
