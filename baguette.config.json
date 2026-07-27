@@ -23,6 +23,32 @@
       "bakeCoreVersion",
       "bakeDecideFact",
       "bakeProcessFacts"
+    ],
+    "tests": [
+      {
+        "function": "bakeCoreVersion",
+        "expected": 1
+      },
+      {
+        "function": "bakeDecideFact",
+        "args": [1, 0, 0, 0],
+        "expected": 257
+      },
+      {
+        "function": "bakeDecideFact",
+        "args": [9, 0, 4, 4294967295],
+        "expected": 262147
+      },
+      {
+        "function": "bakeDecideFact",
+        "args": [9, 0, 4, 1],
+        "expected": 131075
+      },
+      {
+        "function": "bakeDecideFact",
+        "args": [9, 1, 4, 4294967295],
+        "expected": 2306
+      }
     ]
   },
   "memory": {
