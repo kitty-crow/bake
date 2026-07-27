@@ -1,0 +1,45 @@
+{
+  "schema": 1,
+  "name": "Bake Core",
+  "project": "build/self-host/tsconfig.json",
+  "entries": [
+    "build/self-host/wasm-entry.ts"
+  ],
+  "generatedDir": "build/baguette-generated",
+  "outDir": "dist-wasm",
+  "moduleBaseName": "bake-core",
+  "preludeFile": "prelude/bake-baseline.ts",
+  "intrinsicModules": [],
+  "typeAliases": {},
+  "abiTypes": {},
+  "abi": {
+    "exports": [
+      "bakeCoreVersion",
+      "bakeDecideFact",
+      "bakeProcessFacts"
+    ]
+  },
+  "memory": {
+    "initialPages": 64,
+    "maximumPages": 1024,
+    "import": true,
+    "export": false
+  },
+  "runtime": "stub",
+  "variants": [
+    {
+      "name": "bake-core",
+      "threaded": false
+    }
+  ],
+  "allowedHostImports": [
+    {
+      "module": "env",
+      "name": "memory",
+      "kind": "memory"
+    }
+  ],
+  "completeKernel": false,
+  "materialiseInferredTypes": true,
+  "asyncLowering": "reject"
+}
