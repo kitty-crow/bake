@@ -90,7 +90,7 @@ function pairedDifferences(
   host: readonly BenchmarkSample[],
   wasm: readonly BenchmarkSample[]
 ): number[] {
-  const wasmByIteration = new Map(wasm.map(sample => [sample.iteration, sample]));
+  const wasmByIteration = new Map(wasm.map(sample => [sample.iteration, sample] as const));
   return host.map(hostSample => {
     const wasmSample = wasmByIteration.get(hostSample.iteration);
     if (wasmSample === undefined) fail(`Missing Wasm sample for iteration ${hostSample.iteration}`);
