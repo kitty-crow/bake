@@ -9,7 +9,9 @@
   "outDir": "dist-wasm",
   "moduleBaseName": "bake-core",
   "preludeFile": "prelude/bake-baseline.ts",
-  "intrinsicModules": [],
+  "intrinsicModules": [
+    "build/self-host/intrinsics.ts"
+  ],
   "typeAliases": {},
   "abiTypes": {},
   "abi": {
