@@ -4,8 +4,18 @@ import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { bake } from "../src/index";
+import { createBakeCoreEngine } from "../src/core-engine";
+import {
+  BAKE_ACTION_LOWER,
+  BAKE_ACTION_WARNING,
+  BAKE_FACT_NULLISH,
+  BAKE_FLAG_IMPURE,
+  bakeDecisionAction,
+  bakeDecisionPayload
+} from "../src/core/protocol";
 
-const fixtureRoot = path.resolve(__dirname, "../../test/fixtures");
+const repositoryRoot = path.resolve(__dirname, "../..");
+const fixtureRoot = path.join(repositoryRoot, "test/fixtures");
 
 test("suggests a concrete shape for unknown", () => {
   const result = bake({
@@ -77,4 +87,40 @@ test("rejects any and reports unsupported native features", () => {
   assert.ok(result.diagnostics.some(item => item.code === "BK1001"));
   assert.ok(result.diagnostics.some(item => item.code === "BK2101"));
   assert.ok(result.diagnostics.some(item => item.code === "BK2201"));
+});
+
+test("hosted core exposes the policy that is compiled to Wasm", () => {
+  const core = createBakeCoreEngine("host");
+  const lower = core.decide(BAKE_FACT_NULLISH, 0, 4, 1);
+  assert.equal(bakeDecisionAction(lower), BAKE_ACTION_LOWER);
+  assert.equal(bakeDecisionPayload(lower), 2);
+
+  const unsafe = core.decide(BAKE_FACT_NULLISH, BAKE_FLAG_IMPURE, 4, -1);
+  assert.equal(bakeDecisionAction(unsafe), BAKE_ACTION_WARNING);
+});
+
+test("Bake can bake its dependency-free core", () => {
+  const output = path.join(repositoryRoot, "build/test-self-host");
+  fs.rmSync(output, { recursive: true, force: true });
+  try {
+    const result = bake({
+      project: path.join(repositoryRoot, "tsconfig.core.json"),
+      outDir: "build/test-self-host",
+      validateOnly: false,
+      failOnWarnings: true,
+      engine: "host"
+    });
+    assert.equal(result.success, true);
+    assert.equal(result.engine, "host");
+
+    const protocol = fs.readFileSync(path.join(output, "protocol.ts"), "utf8");
+    const entry = fs.readFileSync(path.join(output, "wasm-entry.ts"), "utf8");
+    assert.ok(!protocol.includes("typescript"));
+    assert.ok(!protocol.includes("node:"));
+    assert.ok(!entry.includes("node:"));
+    assert.ok(!protocol.includes("??"));
+    assert.ok(!entry.includes("??"));
+  } finally {
+    fs.rmSync(output, { recursive: true, force: true });
+  }
 });
