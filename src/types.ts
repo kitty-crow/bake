@@ -1,4 +1,5 @@
 import ts from "typescript";
+import type { BakeEngineImplementation, BakeEngineMode } from "./core-engine";
 
 export type BakeSeverity = "error" | "warning" | "suggestion";
 
@@ -26,6 +27,8 @@ export interface BakeConfig {
   readonly validateOnly: boolean;
   readonly reportFile?: string;
   readonly failOnWarnings: boolean;
+  readonly engine?: BakeEngineMode;
+  readonly wasmFile?: string;
 }
 
 export interface BakeFileResult {
@@ -37,6 +40,7 @@ export interface BakeFileResult {
 
 export interface BakeResult {
   readonly success: boolean;
+  readonly engine: BakeEngineImplementation;
   readonly emittedFiles: readonly string[];
   readonly diagnostics: readonly BakeDiagnostic[];
 }

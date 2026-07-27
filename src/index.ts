@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import ts from "typescript";
 import { analyseSourceFile } from "./analyse";
+import { createBakeCoreEngine } from "./core-engine";
 import { formatDiagnostic } from "./diagnostics";
 import { lowerSourceFile } from "./lower";
 import { BAGUETTE_TARGET_COMMIT, BAGUETTE_TARGET_VERSION } from "./target";
@@ -9,6 +10,8 @@ import type { BakeConfig, BakeDiagnostic, BakeResult } from "./types";
 
 export * from "./types";
 export * from "./target";
+export * from "./core-engine";
+export * from "./core/protocol";
 export { formatDiagnostic } from "./diagnostics";
 
 function parseProject(projectPath: string): { program: ts.Program; root: string; parsed: ts.ParsedCommandLine } {
@@ -69,6 +72,7 @@ function commonDirectory(files: readonly string[]): string {
 }
 
 export function bake(config: BakeConfig): BakeResult {
+  const core = createBakeCoreEngine(config.engine ?? "auto", config.wasmFile);
   const { program, root } = parseProject(config.project);
   const checker = program.getTypeChecker();
   const diagnostics: BakeDiagnostic[] = ts.getPreEmitDiagnostics(program).map(diagnostic => normaliseTypeScriptDiagnostic(root, diagnostic));
@@ -79,8 +83,8 @@ export function bake(config: BakeConfig): BakeResult {
 
   const outputs: Array<{ path: string; text: string }> = [];
   for (const source of files) {
-    diagnostics.push(...analyseSourceFile(root, source, program, checker));
-    const lowered = lowerSourceFile(root, source, checker);
+    diagnostics.push(...analyseSourceFile(root, source, program, checker, core));
+    const lowered = lowerSourceFile(root, source, checker, core);
     diagnostics.push(...lowered.diagnostics);
     if (!config.validateOnly) {
       outputs.push({
@@ -125,7 +129,9 @@ export function bake(config: BakeConfig): BakeResult {
     fs.writeFileSync(manifestPath, JSON.stringify({
       schema: 1,
       tool: "Bake",
-      version: "0.1.0",
+      version: "0.2.0-dev",
+      engine: core.implementation,
+      coreAbi: core.version,
       target: { compiler: "Baguette", version: BAGUETTE_TARGET_VERSION, commit: BAGUETTE_TARGET_COMMIT },
       sourceProject: path.relative(root, path.resolve(config.project)).split(path.sep).join("/"),
       generatedProject: path.relative(root, generatedProject).split(path.sep).join("/"),
@@ -139,7 +145,9 @@ export function bake(config: BakeConfig): BakeResult {
     fs.mkdirSync(path.dirname(reportPath), { recursive: true });
     fs.writeFileSync(reportPath, JSON.stringify({
       tool: "Bake",
-      version: "0.1.0",
+      version: "0.2.0-dev",
+      engine: core.implementation,
+      coreAbi: core.version,
       target: `Baguette ${BAGUETTE_TARGET_VERSION} (${BAGUETTE_TARGET_COMMIT})`,
       success,
       emittedFiles: emittedFiles.map(file => path.relative(root, file).split(path.sep).join("/")),
@@ -147,7 +155,7 @@ export function bake(config: BakeConfig): BakeResult {
     }, null, 2) + "\n", "utf8");
   }
 
-  return { success, emittedFiles, diagnostics };
+  return { success, engine: core.implementation, emittedFiles, diagnostics };
 }
 
 export function printBakeResult(result: BakeResult): void {
@@ -157,5 +165,5 @@ export function printBakeResult(result: BakeResult): void {
   }
   const errors = result.diagnostics.filter(item => item.severity === "error").length;
   const warnings = result.diagnostics.filter(item => item.severity === "warning").length;
-  process.stdout.write(`Bake: ${result.success ? "ready for Baguette validation" : "source needs attention"}; ${errors} error(s), ${warnings} warning(s), ${result.emittedFiles.length} file(s) emitted.\n`);
+  process.stdout.write(`Bake (${result.engine} core): ${result.success ? "ready for Baguette validation" : "source needs attention"}; ${errors} error(s), ${warnings} warning(s), ${result.emittedFiles.length} file(s) emitted.\n`);
 }
