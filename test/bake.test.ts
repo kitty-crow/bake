@@ -52,7 +52,7 @@ test("lowers long nullish chains with linear output growth", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "bake-nullish-"));
   try {
     fs.writeFileSync(path.join(root, "tsconfig.json"), JSON.stringify({
-      compilerOptions: { strict: true, target: "ES2022", module: "ESNext" },
+      compilerOptions: { strict: true, target: "ES2022", module: "ESNext", types: [] },
       files: ["input.ts"]
     }, null, 2));
     const chain = Array.from({ length: 128 }, () => "value").join(" ?? ");
