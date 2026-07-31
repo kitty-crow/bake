@@ -72,6 +72,27 @@ function commonDirectory(files: readonly string[]): string {
   return shared.join(path.sep) || path.parse(files[0]!).root;
 }
 
+function ownedImplicitAny(source: ts.SourceFile, checker: ts.TypeChecker): Set<string> {
+  const out = new Set<string>();
+  const visit = (node: ts.Node): void => {
+    if (ts.isParameter(node) && !node.type && ts.isIdentifier(node.name)) {
+      const fn = node.parent;
+      const call = (ts.isArrowFunction(fn) || ts.isFunctionExpression(fn)) ? fn.parent : undefined;
+      const target = call && ts.isCallExpression(call) && call.arguments[0] === fn ? call.expression : undefined;
+      if (target && ts.isPropertyAccessExpression(target) && ["every", "some", "filter"].includes(target.name.text)) {
+        const type = checker.getTypeAtLocation(node.name);
+        if (type.flags & ts.TypeFlags.Any) {
+          const place = source.getLineAndCharacterOfPosition(node.name.getStart(source));
+          out.add(`${place.line + 1}:${place.character + 1}`);
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return out;
+}
+
 function analysisFor(
   lowering: BakeLowering,
   root: string,
@@ -82,9 +103,13 @@ function analysisFor(
 ): BakeDiagnostic[] {
   const diagnostics = analyseSourceFile(root, source, program, checker, core);
   if (lowering === "safe") return diagnostics;
-  // Wide lowering owns these two diagnostics. Anything it cannot remove is
+  // Wide lowering owns these diagnostics. Anything it cannot remove is
   // rejected by Baguette's authoritative validation of the emitted source.
-  return diagnostics.filter(item => item.code !== "BK1002" && item.code !== "BK2201");
+  const implicit = ownedImplicitAny(source, checker);
+  return diagnostics.filter(item =>
+    item.code !== "BK1002" && item.code !== "BK2201" && item.code !== "BK3001" &&
+    !(item.code === "BK1001" && implicit.has(`${item.line}:${item.column}`))
+  );
 }
 
 export function bake(config: BakeConfig): BakeResult {
@@ -102,8 +127,8 @@ export function bake(config: BakeConfig): BakeResult {
   for (const source of files) {
     diagnostics.push(...analysisFor(lowering, root, source, program, checker, core));
     const safe = lowerSourceFile(root, source, checker, core);
-    diagnostics.push(...safe.diagnostics);
-    const lowered = lowering === "wide" ? lowerWide(root, safe.sourceFile) : safe;
+    diagnostics.push(...(lowering === "wide" ? safe.diagnostics.filter(item => item.code !== "BK3001") : safe.diagnostics));
+    const lowered = lowering === "wide" ? lowerWide(root, safe.sourceFile, checker) : safe;
     if (lowering === "wide") diagnostics.push(...lowered.diagnostics);
     if (!config.validateOnly) {
       outputs.push({
