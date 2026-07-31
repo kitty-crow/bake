@@ -1,0 +1,31 @@
+name: Recheck Bake source snapshot
+
+on:
+  pull_request:
+    branches: [agent/tarot-lowering-obfuscation]
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    if: github.event.pull_request.head.ref == 'agent/tarot-engine-wide'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/tarot-engine-wide
+
+      - name: Pack Bake source
+        run: |
+          tar --exclude=.git --exclude=node_modules --exclude=dist --exclude=dist-test -czf bake-wide-source.tar.gz .
+          sha256sum bake-wide-source.tar.gz > bake-wide-source.tar.gz.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bake-wide-source
+          path: |
+            bake-wide-source.tar.gz
+            bake-wide-source.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 1
