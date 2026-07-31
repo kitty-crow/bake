@@ -9,5 +9,5 @@ export interface WideResult {
 
 export interface WidePass {
   readonly name: string;
-  run(root: string, source: ts.SourceFile): WideResult;
+  run(root: string, source: ts.SourceFile, checker: ts.TypeChecker): WideResult;
 }
