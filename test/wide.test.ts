@@ -22,7 +22,7 @@ class Counter {
 
 interface Box { value: number; }
 
-function read(box: Box | null): number | null {
+function read(box: Box | null): number | undefined {
   return box?.value;
 }
 
