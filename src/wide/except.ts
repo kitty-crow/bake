@@ -21,6 +21,13 @@ function code(expression: ts.Expression): number | undefined {
   return undefined;
 }
 
+function needsSink(node: ts.TryStatement): boolean {
+  const block = node.parent;
+  if (!ts.isBlock(block) || block.statements[block.statements.length - 1] !== node) return false;
+  const owner = block.parent;
+  return ts.isFunctionLike(owner) && Boolean(owner.type && owner.type.kind !== ts.SyntaxKind.VoidKeyword);
+}
+
 export const exceptPass: WidePass = {
   name: "exceptions",
   run(root, source): WideResult {
@@ -70,8 +77,7 @@ export const exceptPass: WidePass = {
           ], ts.NodeFlags.Const)));
         }
         catchStatements.push(...node.catchClause.block.statements.map(statement => ts.visitNode(statement, visit) as ts.Statement));
-        changed = true;
-        return [
+        const output: ts.Statement[] = [
           factory.createVariableStatement(undefined, factory.createVariableDeclarationList([
             factory.createVariableDeclaration(err, undefined, factory.createKeywordTypeNode(ts.SyntaxKind.NumberKeyword), factory.createNumericLiteral(0))
           ], ts.NodeFlags.Let)),
@@ -81,6 +87,11 @@ export const exceptPass: WidePass = {
             factory.createBlock(catchStatements, true)
           )
         ];
+        if (needsSink(node)) {
+          output.push(factory.createWhileStatement(factory.createTrue(), factory.createBlock([], true)));
+        }
+        changed = true;
+        return output;
       };
       return file => ts.visitNode(file, visit) as ts.SourceFile;
     };
