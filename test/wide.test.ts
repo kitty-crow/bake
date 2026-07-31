@@ -75,8 +75,11 @@ test("wide lowering removes the supported application syntax", () => {
     assert.ok(!output.includes("?."));
     assert.ok(!/\btry\b/.test(output));
     assert.ok(!/\bthrow\b/.test(output));
+    assert.ok(!output.includes("__bake_try"));
     assert.match(output, /__bake_err_/);
     assert.match(output, /__bake_p_/);
+    assert.match(output, /do\s*\{/);
+    assert.match(output, /while \(true\)/);
     assert.match(output, /for \(let __bake_index_/);
     assert.match(output, /__bake_destructure_/);
   } finally {
