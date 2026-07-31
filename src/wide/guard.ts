@@ -4,8 +4,9 @@ import type { WidePass, WideResult } from "./types";
 function lowerUnit<T extends ts.SignatureDeclarationBase>(factory: ts.NodeFactory, node: T): T {
   const predicate = node.type && ts.isTypePredicateNode(node.type) ? node.type : undefined;
   if (!predicate || !predicate.type || !ts.isIdentifier(predicate.parameterName)) return node;
+  const parameterName = predicate.parameterName.text;
   const parameters = node.parameters.map(parameter => {
-    if (!ts.isIdentifier(parameter.name) || parameter.name.text !== predicate.parameterName.text) return parameter;
+    if (!ts.isIdentifier(parameter.name) || parameter.name.text !== parameterName) return parameter;
     if (!parameter.type || parameter.type.kind !== ts.SyntaxKind.UnknownKeyword) return parameter;
     return factory.updateParameterDeclaration(
       parameter,
@@ -21,16 +22,16 @@ function lowerUnit<T extends ts.SignatureDeclarationBase>(factory: ts.NodeFactor
 
   const booleanType = factory.createKeywordTypeNode(ts.SyntaxKind.BooleanKeyword);
   if (ts.isFunctionDeclaration(node)) {
-    return factory.updateFunctionDeclaration(node, node.modifiers, node.asteriskToken, node.name, node.typeParameters, parameters, booleanType, node.body) as T;
+    return factory.updateFunctionDeclaration(node, node.modifiers, node.asteriskToken, node.name, node.typeParameters, parameters, booleanType, node.body) as unknown as T;
   }
   if (ts.isFunctionExpression(node)) {
-    return factory.updateFunctionExpression(node, node.modifiers, node.asteriskToken, node.name, node.typeParameters, parameters, booleanType, node.body) as T;
+    return factory.updateFunctionExpression(node, node.modifiers, node.asteriskToken, node.name, node.typeParameters, parameters, booleanType, node.body) as unknown as T;
   }
   if (ts.isArrowFunction(node)) {
-    return factory.updateArrowFunction(node, node.modifiers, node.typeParameters, parameters, booleanType, node.equalsGreaterThanToken, node.body) as T;
+    return factory.updateArrowFunction(node, node.modifiers, node.typeParameters, parameters, booleanType, node.equalsGreaterThanToken, node.body) as unknown as T;
   }
   if (ts.isMethodDeclaration(node)) {
-    return factory.updateMethodDeclaration(node, node.modifiers, node.asteriskToken, node.name, node.questionToken, node.typeParameters, parameters, booleanType, node.body) as T;
+    return factory.updateMethodDeclaration(node, node.modifiers, node.asteriskToken, node.name, node.questionToken, node.typeParameters, parameters, booleanType, node.body) as unknown as T;
   }
   return node;
 }
