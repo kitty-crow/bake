@@ -18,14 +18,14 @@ jobs:
 
       - name: Pack Bake source
         run: |
-          tar --exclude=.git --exclude=node_modules --exclude=dist --exclude=dist-test --exclude=.recheck-artifact -czf /tmp/bake-wide-source.tar.gz .
-          mkdir .recheck-artifact
-          mv /tmp/bake-wide-source.tar.gz .recheck-artifact/
-          sha256sum .recheck-artifact/bake-wide-source.tar.gz > .recheck-artifact/bake-wide-source.tar.gz.sha256
+          tar --exclude=.git --exclude=node_modules --exclude=dist --exclude=dist-test --exclude=recheck-artifact -czf /tmp/bake-wide-source.tar.gz .
+          mkdir recheck-artifact
+          mv /tmp/bake-wide-source.tar.gz recheck-artifact/
+          sha256sum recheck-artifact/bake-wide-source.tar.gz > recheck-artifact/bake-wide-source.tar.gz.sha256
 
       - uses: actions/upload-artifact@v4
         with:
           name: bake-wide-source
-          path: .recheck-artifact
+          path: recheck-artifact
           if-no-files-found: error
           retention-days: 1
