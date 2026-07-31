@@ -2,6 +2,7 @@ import ts from "typescript";
 import type { BakeEngineImplementation, BakeEngineMode } from "./core-engine";
 
 export type BakeSeverity = "error" | "warning" | "suggestion";
+export type BakeLowering = "safe" | "wide";
 
 export interface BakeSuggestion {
   readonly title: string;
@@ -29,6 +30,7 @@ export interface BakeConfig {
   readonly failOnWarnings: boolean;
   readonly engine?: BakeEngineMode;
   readonly wasmFile?: string;
+  readonly lowering?: BakeLowering;
 }
 
 export interface BakeFileResult {
@@ -41,6 +43,7 @@ export interface BakeFileResult {
 export interface BakeResult {
   readonly success: boolean;
   readonly engine: BakeEngineImplementation;
+  readonly lowering: BakeLowering;
   readonly emittedFiles: readonly string[];
   readonly diagnostics: readonly BakeDiagnostic[];
 }

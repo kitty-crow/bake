@@ -6,7 +6,8 @@ import { createBakeCoreEngine } from "./core-engine";
 import { formatDiagnostic } from "./diagnostics";
 import { lowerSourceFile } from "./lower";
 import { BAGUETTE_TARGET_COMMIT, BAGUETTE_TARGET_VERSION } from "./target";
-import type { BakeConfig, BakeDiagnostic, BakeResult } from "./types";
+import type { BakeConfig, BakeDiagnostic, BakeLowering, BakeResult } from "./types";
+import { lowerWide } from "./wide/run";
 
 export * from "./types";
 export * from "./target";
@@ -71,8 +72,24 @@ function commonDirectory(files: readonly string[]): string {
   return shared.join(path.sep) || path.parse(files[0]!).root;
 }
 
+function analysisFor(
+  lowering: BakeLowering,
+  root: string,
+  source: ts.SourceFile,
+  program: ts.Program,
+  checker: ts.TypeChecker,
+  core: ReturnType<typeof createBakeCoreEngine>
+): BakeDiagnostic[] {
+  const diagnostics = analyseSourceFile(root, source, program, checker, core);
+  if (lowering === "safe") return diagnostics;
+  // Wide lowering owns these two diagnostics. Anything it cannot remove is
+  // rejected by Baguette's authoritative validation of the emitted source.
+  return diagnostics.filter(item => item.code !== "BK1002" && item.code !== "BK2201");
+}
+
 export function bake(config: BakeConfig): BakeResult {
   const core = createBakeCoreEngine(config.engine ?? "auto", config.wasmFile);
+  const lowering = config.lowering ?? "safe";
   const { program, root } = parseProject(config.project);
   const checker = program.getTypeChecker();
   const diagnostics: BakeDiagnostic[] = ts.getPreEmitDiagnostics(program).map(diagnostic => normaliseTypeScriptDiagnostic(root, diagnostic));
@@ -83,9 +100,11 @@ export function bake(config: BakeConfig): BakeResult {
 
   const outputs: Array<{ path: string; text: string }> = [];
   for (const source of files) {
-    diagnostics.push(...analyseSourceFile(root, source, program, checker, core));
-    const lowered = lowerSourceFile(root, source, checker, core);
-    diagnostics.push(...lowered.diagnostics);
+    diagnostics.push(...analysisFor(lowering, root, source, program, checker, core));
+    const safe = lowerSourceFile(root, source, checker, core);
+    diagnostics.push(...safe.diagnostics);
+    const lowered = lowering === "wide" ? lowerWide(root, safe.sourceFile) : safe;
+    if (lowering === "wide") diagnostics.push(...lowered.diagnostics);
     if (!config.validateOnly) {
       outputs.push({
         path: outputPathFor(source, root, config.outDir, commonRoot),
@@ -131,6 +150,7 @@ export function bake(config: BakeConfig): BakeResult {
       tool: "Bake",
       version: "0.2.0-dev",
       engine: core.implementation,
+      lowering,
       coreAbi: core.version,
       target: { compiler: "Baguette", version: BAGUETTE_TARGET_VERSION, commit: BAGUETTE_TARGET_COMMIT },
       sourceProject: path.relative(root, path.resolve(config.project)).split(path.sep).join("/"),
@@ -147,6 +167,7 @@ export function bake(config: BakeConfig): BakeResult {
       tool: "Bake",
       version: "0.2.0-dev",
       engine: core.implementation,
+      lowering,
       coreAbi: core.version,
       target: `Baguette ${BAGUETTE_TARGET_VERSION} (${BAGUETTE_TARGET_COMMIT})`,
       success,
@@ -155,7 +176,7 @@ export function bake(config: BakeConfig): BakeResult {
     }, null, 2) + "\n", "utf8");
   }
 
-  return { success, engine: core.implementation, emittedFiles, diagnostics };
+  return { success, engine: core.implementation, lowering, emittedFiles, diagnostics };
 }
 
 export function printBakeResult(result: BakeResult): void {
@@ -165,5 +186,5 @@ export function printBakeResult(result: BakeResult): void {
   }
   const errors = result.diagnostics.filter(item => item.severity === "error").length;
   const warnings = result.diagnostics.filter(item => item.severity === "warning").length;
-  process.stdout.write(`Bake (${result.engine} core): ${result.success ? "ready for Baguette validation" : "source needs attention"}; ${errors} error(s), ${warnings} warning(s), ${result.emittedFiles.length} file(s) emitted.\n`);
+  process.stdout.write(`Bake (${result.engine} core, ${result.lowering} lowering): ${result.success ? "ready for Baguette validation" : "source needs attention"}; ${errors} error(s), ${warnings} warning(s), ${result.emittedFiles.length} file(s) emitted.\n`);
 }
