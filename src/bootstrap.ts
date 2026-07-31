@@ -38,6 +38,14 @@ function verifyCore(wasmFile: string): void {
   }
 }
 
+function linkBake(root: string, baguetteRoot: string): void {
+  const vendor = path.join(baguetteRoot, "vendor");
+  const target = path.join(vendor, "bake");
+  if (fs.existsSync(target)) return;
+  fs.mkdirSync(vendor, { recursive: true });
+  fs.symlinkSync(root, target, process.platform === "win32" ? "junction" : "dir");
+}
+
 function main(): void {
   const root = path.resolve(__dirname, "..");
   const selfHostDir = path.join(root, "build/self-host");
@@ -65,10 +73,11 @@ function main(): void {
   }
 
   const baguetteRoot = path.dirname(path.dirname(compiler));
+  linkBake(root, baguetteRoot);
   const command = spawnSync(
     "bun",
     [compiler, "--config", path.join(root, "baguette.config.json")],
-    { cwd: baguetteRoot, env: process.env, stdio: "inherit" }
+    { cwd: baguetteRoot, env: { ...process.env, BAGUETTE_BAKE_ROOT: root }, stdio: "inherit" }
   );
   if (command.error) fail(`Could not start Baguette: ${command.error.message}`);
   if (command.status !== 0) fail(`Baguette exited with status ${command.status ?? -1}`);
