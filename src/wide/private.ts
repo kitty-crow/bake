@@ -10,24 +10,25 @@ export const privatePass: WidePass = {
     const names = new Map<string, string>();
     const transformer: ts.TransformerFactory<ts.SourceFile> = context => {
       const factory = context.factory;
+      const raw = (name: ts.PrivateIdentifier): string => name.text.replace(/^#/, "");
       const findName = (name: ts.PrivateIdentifier): string => {
         let current: ts.Node | undefined = name;
         while (current && !ts.isClassLike(current)) current = current.parent;
-        if (current) {
+        if (current && ts.isClassLike(current)) {
           for (const member of current.members) {
-            if (!member.name || !ts.isPrivateIdentifier(member.name) || member.name.text !== name.text) continue;
-            const found = names.get(`${member.name.text}:${member.pos}`);
+            if (!member.name || !ts.isPrivateIdentifier(member.name) || raw(member.name) !== raw(name)) continue;
+            const found = names.get(`${raw(member.name)}:${member.pos}`);
             if (found) return found;
           }
         }
-        return `__bake_p_${name.text}`;
+        return `__bake_p_${raw(name)}`;
       };
       const visit: ts.Visitor = node => {
         if (ts.isClassLike(node)) {
           const id = classId++;
           for (const member of node.members) {
             if (member.name && ts.isPrivateIdentifier(member.name)) {
-              names.set(`${member.name.text}:${member.pos}`, `__bake_p_${id}_${member.name.text}`);
+              names.set(`${raw(member.name)}:${member.pos}`, `__bake_p_${id}_${raw(member.name)}`);
             }
           }
         }
