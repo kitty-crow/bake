@@ -41,7 +41,8 @@ function verifyCore(wasmFile: string): void {
 function linkBake(root: string, baguetteRoot: string): void {
   const vendor = path.join(baguetteRoot, "vendor");
   const target = path.join(vendor, "bake");
-  if (fs.existsSync(target)) return;
+  if (fs.existsSync(path.join(target, "tsconfig.json"))) return;
+  fs.rmSync(target, { recursive: true, force: true });
   fs.mkdirSync(vendor, { recursive: true });
   fs.symlinkSync(root, target, process.platform === "win32" ? "junction" : "dir");
 }
