@@ -28,6 +28,15 @@ function needsSink(node: ts.TryStatement): boolean {
   return ts.isFunctionLike(owner) && Boolean(owner.type && owner.type.kind !== ts.SyntaxKind.VoidKeyword);
 }
 
+function nestedBreak(node: ts.Node, root: ts.TryStatement): boolean {
+  let current = node.parent;
+  while (current && current !== root.tryBlock) {
+    if (ts.isIterationStatement(current, false) || ts.isSwitchStatement(current)) return true;
+    current = current.parent;
+  }
+  return false;
+}
+
 export const exceptPass: WidePass = {
   name: "exceptions",
   run(root, source): WideResult {
@@ -44,8 +53,8 @@ export const exceptPass: WidePass = {
         }
         const id = serial++;
         const err = factory.createUniqueName(`__bake_err_${id}`);
-        const label = factory.createUniqueName(`__bake_try_${id}`);
         let nested = false;
+        let unsafeBreak = false;
         const throwVisit: ts.Visitor = current => {
           if (ts.isFunctionLike(current)) return current;
           if (ts.isTryStatement(current) && current !== node) {
@@ -53,13 +62,17 @@ export const exceptPass: WidePass = {
             return current;
           }
           if (ts.isThrowStatement(current)) {
+            if (nestedBreak(current, node)) {
+              unsafeBreak = true;
+              return current;
+            }
             const value = code(current.expression);
             if (value === undefined) {
               diagnostics.push(warn(root, current, "BK3202", "A non-literal thrown value was collapsed to error code 1.", "Throw a numeric code or an Error with a literal message for stable lowering."));
             }
             return factory.createBlock([
               factory.createExpressionStatement(factory.createBinaryExpression(err, factory.createToken(ts.SyntaxKind.EqualsToken), factory.createNumericLiteral(value ?? 1))),
-              factory.createBreakStatement(label)
+              factory.createBreakStatement()
             ], true);
           }
           return ts.visitEachChild(current, throwVisit, context);
@@ -67,6 +80,10 @@ export const exceptPass: WidePass = {
         const body = ts.visitNode(node.tryBlock, throwVisit) as ts.Block;
         if (nested) {
           diagnostics.push(warn(root, node, "BK3203", "Nested try blocks were left unchanged.", "Split nested exception regions into named result-returning functions."));
+          return ts.visitEachChild(node, visit, context);
+        }
+        if (unsafeBreak) {
+          diagnostics.push(warn(root, node, "BK3204", "Throws inside loops or switches were left unchanged.", "Move that region into a named result-returning function before wide lowering."));
           return ts.visitEachChild(node, visit, context);
         }
         const catchStatements: ts.Statement[] = [];
@@ -81,7 +98,7 @@ export const exceptPass: WidePass = {
           factory.createVariableStatement(undefined, factory.createVariableDeclarationList([
             factory.createVariableDeclaration(err, undefined, factory.createKeywordTypeNode(ts.SyntaxKind.NumberKeyword), factory.createNumericLiteral(0))
           ], ts.NodeFlags.Let)),
-          factory.createLabeledStatement(label, body),
+          factory.createDoStatement(body, factory.createFalse()),
           factory.createIfStatement(
             factory.createBinaryExpression(err, factory.createToken(ts.SyntaxKind.ExclamationEqualsToken), factory.createNumericLiteral(0)),
             factory.createBlock(catchStatements, true)
