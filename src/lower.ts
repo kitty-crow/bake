@@ -213,7 +213,7 @@ export function lowerSourceFile(
 
       const unsupported = declarations.find(declaration => !ts.isIdentifier(declaration.name) && bindingNeedsManualLowering(declaration.name));
       const missingInitialiser = declarations.find(declaration => !ts.isIdentifier(declaration.name) && !declaration.initializer);
-      if (missingInitialiser && target === "clang") diagnostics.push(diagnosticAt(root, missingInitialiser, "BK4102", "Destructuring without an initialiser has no C lowering.", "Give the binding a statically typed initialiser.");
+      if (missingInitialiser && target === "clang") diagnostics.push(diagnosticAt(root, missingInitialiser, "BK4102", "Destructuring without an initialiser has no C lowering.", "Give the binding a statically typed initialiser."));
       const flags = unsupported ? BAKE_FLAG_UNSUPPORTED_BINDING : 0;
       const decision = core.decide(BAKE_FACT_DESTRUCTURE, flags, 0, 0);
       const action = bakeDecisionAction(decision);
