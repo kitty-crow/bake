@@ -21,17 +21,21 @@ const HOST_GLOBALS = new Set([
   "process", "require", "Bun", "fetch", "window", "document"
 ]);
 
-function topLevelFunctionBinding(node: ts.ArrowFunction | ts.FunctionExpression): boolean {
-  const declaration = node.parent;
-  if (!ts.isVariableDeclaration(declaration) ||
-      declaration.initializer !== node ||
-      !ts.isIdentifier(declaration.name)) return false;
-  const list = declaration.parent;
-  return ts.isVariableDeclarationList(list) &&
+function topLevelFunctionBinding(node: ts.ArrowFunction | ts.FunctionExpression, ancestors: readonly ts.Node[]): boolean {
+  const declaration = ancestors[ancestors.length - 1];
+  const list = ancestors[ancestors.length - 2];
+  const statement = ancestors[ancestors.length - 3];
+  const owner = ancestors[ancestors.length - 4];
+  return Boolean(
+    declaration && ts.isVariableDeclaration(declaration) &&
+    declaration.initializer === node &&
+    ts.isIdentifier(declaration.name) &&
+    list && ts.isVariableDeclarationList(list) &&
     (list.flags & ts.NodeFlags.Const) !== 0 &&
     list.declarations.length === 1 &&
-    ts.isVariableStatement(list.parent) &&
-    ts.isSourceFile(list.parent.parent);
+    statement && ts.isVariableStatement(statement) &&
+    owner && ts.isSourceFile(owner)
+  );
 }
 
 function externalIdentifier(node: ts.Identifier, checker: ts.TypeChecker): boolean {
@@ -56,7 +60,8 @@ export function analyseClangSourceFile(
     }
   };
 
-  const walk = (node: ts.Node): void => {
+  const walk = (node: ts.Node, ancestors: readonly ts.Node[] = []): void => {
+    const parent = ancestors[ancestors.length - 1];
     if (ts.isTryStatement(node) || ts.isThrowStatement(node)) {
       report(node, "BK4001", "Exception handling has no freestanding C lowering.",
         "Use explicit typed status/results; Bake must not invent C exception semantics.");
@@ -70,7 +75,7 @@ export function analyseClangSourceFile(
       report(node, "BK4003", "Class allocation, inheritance and method semantics are not yet lowered for C.",
         "Use interfaces, explicit records and top-level functions until a verified class lowering exists.");
     }
-    if ((ts.isArrowFunction(node) || ts.isFunctionExpression(node)) && !topLevelFunctionBinding(node)) {
+    if ((ts.isArrowFunction(node) || ts.isFunctionExpression(node)) && !topLevelFunctionBinding(node, ancestors)) {
       report(node, "BK4004", "This closure cannot be translated into a static C function safely.",
         "Use a named top-level function; only const-bound top-level functions are currently hoisted.");
     }
@@ -79,8 +84,8 @@ export function analyseClangSourceFile(
         "Accept an explicit typed parameter and destructure it in the function body.");
     }
     if (ts.isVariableDeclaration(node) && !ts.isIdentifier(node.name) &&
-        (!ts.isVariableDeclarationList(node.parent) ||
-         !ts.isVariableStatement(node.parent.parent))) {
+        (!parent || !ts.isVariableDeclarationList(parent) ||
+         !ancestors[ancestors.length - 2] || !ts.isVariableStatement(ancestors[ancestors.length - 2]!))) {
       report(node, "BK4011", "Destructuring outside a local variable statement is not lowered for C.",
         "Use a simple identifier binding and explicit field/index access.");
     }
@@ -115,12 +120,12 @@ export function analyseClangSourceFile(
         ((HOST_GLOBALS.has(node.text) && externalIdentifier(node, checker)) ||
          (node.text === "undefined" && externalIdentifier(node, checker)))) {
       // Property names are not references to global bindings.
-      if (!(ts.isPropertyAccessExpression(node.parent) && node.parent.name === node)) {
+      if (!(parent && ts.isPropertyAccessExpression(parent) && parent.name === node)) {
         report(node, "BK4009", `JavaScript host value ${node.text} is unavailable on bare metal.`,
           "Use an explicit freestanding platform capability or a typed native representation.");
       }
     }
-    ts.forEachChild(node, walk);
+    ts.forEachChild(node, child => walk(child, [...ancestors, node]));
   };
 
   walk(source);
