@@ -90,7 +90,11 @@ export function bake(config: BakeConfig): BakeResult {
     diagnostics.push(...analyseSourceFile(root, source, program, checker, core, target));
     const lowered = lowerSourceFile(root, source, checker, core, target);
     diagnostics.push(...lowered.diagnostics);
-    const native = target === "clang" ? lowerNativeClang(lowered.sourceFile, checker, root) : undefined;
+    // Materialise original TypeScript types before rewriting host types and
+    // calls into native C intrinsics. The Wasm output path remains untouched.
+    const clang = target === "clang" ? lowerClangSourceFile(lowered.sourceFile, checker) : undefined;
+    if (clang) diagnostics.push(...clang.diagnostics);
+    const native = target === "clang" ? lowerNativeClang(clang!.sourceFile, checker, root) : undefined;
     if (native) {
       diagnostics.push(...native.diagnostics);
       if (native.intrinsics.length) cIntrinsics.push({
@@ -99,12 +103,10 @@ export function bake(config: BakeConfig): BakeResult {
       });
       diagnostics.push(...analyseClangSourceFile(root, native.sourceFile, checker));
     }
-    const clang = target === "clang" ? lowerClangSourceFile(native!.sourceFile, checker) : undefined;
-    if (clang) diagnostics.push(...clang.diagnostics);
     if (!config.validateOnly) {
       outputs.push({
         path: outputPathFor(source, root, config.outDir, commonRoot),
-        text: printer.printFile(clang?.sourceFile ?? lowered.sourceFile)
+        text: printer.printFile(native?.sourceFile ?? lowered.sourceFile)
       });
     }
   }
