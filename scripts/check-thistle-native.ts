@@ -101,7 +101,7 @@ try {
   }
   if (!intrinsicNames.has("__bake_c_atomic_add_u64") ||
       !intrinsicNames.has("__bake_c_as_uint_n") ||
-      !intrinsicNames.has("__bake_c_bits_to_f64")) {
+      !intrinsicNames.has("__bake_c_view_get_f64")) {
     throw new Error("Incomplete native intrinsic lowering contract");
   }
   process.stdout.write(`Thistle native Clang frontend validated: ${sources.length} modules, ${declared} intrinsic declarations\n`);
