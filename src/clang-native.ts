@@ -181,7 +181,7 @@ export function lowerNativeClang(
   let needsNativeTypes = false;
 
   const diagnostic = (node: ts.Node, message: string): void => {
-    diagnostics.push(diagnosticAt(root, node, "BK4201", "Cannot safely lower native operation: " + message,
+    diagnostics.push(diagnosticAt(root, node, "BK4201", "error", "Cannot safely lower native operation: " + message,
       "Use a statically typed operation covered by the Clang intrinsic contract."));
   };
   const call = (name: string, args: readonly ts.Expression[]): ts.Expression => {
