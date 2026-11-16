@@ -24,7 +24,13 @@ jobs:
           path: baguette
           submodules: recursive
 
-      - name: Check out Thistle\n        uses: actions/checkout@v4\n        with:\n          repository: kitty-crow/thistle\n          path: thistle\n\n      - name: Set up Node
+      - name: Check out Thistle
+        uses: actions/checkout@v4
+        with:
+          repository: kitty-crow/thistle
+          path: thistle
+
+      - name: Set up Node
         uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -50,7 +56,11 @@ jobs:
         working-directory: bake
         run: npm test
 
-      - name: Lower Thistle native kernel for C\n        working-directory: bake\n        run: bun scripts/check-thistle-native.ts ../thistle\n\n      - name: Self-bake and compile the Wasm core
+      - name: Lower Thistle native kernel for C
+        working-directory: bake
+        run: bun scripts/check-thistle-native.ts ../thistle
+
+      - name: Self-bake and compile the Wasm core
         working-directory: bake
         env:
           BAGUETTE_COMPILER: ../baguette/src/compiler.ts
