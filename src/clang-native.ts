@@ -28,6 +28,12 @@ const INTRINSICS: Readonly<Record<string, string>> = {
   "__bake_c_new_u8_array": "declare function __bake_c_new_u8_array(buffer: __bake_c_Buffer): __bake_c_U8Array;",
   "__bake_c_new_i32_array": "declare function __bake_c_new_i32_array(buffer: __bake_c_Buffer): __bake_c_I32Array;",
   "__bake_c_new_u64_array": "declare function __bake_c_new_u64_array(buffer: __bake_c_Buffer): __bake_c_U64Array;",
+  "__bake_c_u8_get": "declare function __bake_c_u8_get(array: __bake_c_U8Array, at: number): number;",
+  "__bake_c_u8_set": "declare function __bake_c_u8_set(array: __bake_c_U8Array, at: number, value: number): number;",
+  "__bake_c_i32_get": "declare function __bake_c_i32_get(array: __bake_c_I32Array, at: number): number;",
+  "__bake_c_i32_set": "declare function __bake_c_i32_set(array: __bake_c_I32Array, at: number, value: number): number;",
+  "__bake_c_u64_get": "declare function __bake_c_u64_get(array: __bake_c_U64Array, at: number): bigint;",
+  "__bake_c_u64_set": "declare function __bake_c_u64_set(array: __bake_c_U64Array, at: number, value: bigint): bigint;",
   "__bake_c_u8_fill": "declare function __bake_c_u8_fill(array: __bake_c_U8Array, value: number, start?: number, end?: number): __bake_c_U8Array;",
   "__bake_c_u8_copy_within": "declare function __bake_c_u8_copy_within(array: __bake_c_U8Array, target: number, start: number, end?: number): __bake_c_U8Array;",
   "__bake_c_abort_range": "declare function __bake_c_abort_range(): never;",
@@ -189,8 +195,38 @@ export function lowerNativeClang(
     return factory.createCallExpression(factory.createIdentifier(name), undefined, args);
   };
 
+  const arrayKind = (expression: ts.Expression): string | undefined => {
+    if (typeMatches(expression, checker, "Uint8Array")) return "u8";
+    if (typeMatches(expression, checker, "Int32Array")) return "i32";
+    if (typeMatches(expression, checker, "BigUint64Array")) return "u64";
+    return undefined;
+  };
+
   const transformer: ts.TransformerFactory<ts.SourceFile> = context => {
     const visit: ts.Visitor = node => {
+      if (ts.isBinaryExpression(node) &&
+          node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+          ts.isElementAccessExpression(node.left) && node.left.argumentExpression) {
+        const kind = arrayKind(node.left.expression);
+        if (kind) {
+          needsNativeTypes = true;
+          return call("__bake_c_" + kind + "_set", [
+            ts.visitNode(node.left.expression, visit) as ts.Expression,
+            ts.visitNode(node.left.argumentExpression, visit) as ts.Expression,
+            ts.visitNode(node.right, visit) as ts.Expression
+          ]);
+        }
+      }
+      if (ts.isElementAccessExpression(node) && node.argumentExpression) {
+        const kind = arrayKind(node.expression);
+        if (kind) {
+          needsNativeTypes = true;
+          return call("__bake_c_" + kind + "_get", [
+            ts.visitNode(node.expression, visit) as ts.Expression,
+            ts.visitNode(node.argumentExpression, visit) as ts.Expression
+          ]);
+        }
+      }
       if (ts.isThrowStatement(node) && node.expression &&
           ts.isNewExpression(node.expression) &&
           ts.isIdentifier(node.expression.expression) &&
