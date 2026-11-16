@@ -6,7 +6,7 @@ import type { BakeDiagnostic } from "./types";
  * Bake's freestanding intrinsic contract. These are compiler imports, not
  * JavaScript shims. A future C emitter must bind them to native operations.
  */
-const NATIVE_MEMORY_SOURCE = String.raw\`import type { I32, I64, Ptr, U32, U64 } from "./types.js";
+const NATIVE_MEMORY_SOURCE = String.raw`import type { I32, I64, Ptr, U32, U64 } from "./types.js";
 
 /** Byte offsets into a contiguous native memory region. */
 export interface TetoMemory {
@@ -164,7 +164,7 @@ export const atomicAddU64 = (memory: TetoMemory, at: Ptr, value: U64): U64 => {
   aligned(memory, at, 8);
   return __bake_c_atomic_add_u64(memory.base, at, BigInt.asUintN(64, value));
 };
-\`;
+`;
 
 const NATIVE_NUMERIC_INTRINSICS: Readonly<Record<string, string>> = {
   "__bake_c_bigint": "declare function __bake_c_bigint(value: number | bigint): bigint;",
@@ -231,7 +231,7 @@ function isBitcastWordModule(source: ts.SourceFile): boolean {
   if (!source.fileName.replaceAll("\\", "/").endsWith("/src/native/word.ts")) return false;
   return source.text.includes("const floatBuffer = new ArrayBuffer(8);") &&
     source.text.includes("const floatView = new DataView(floatBuffer);") &&
-    BITCAST_INTRINSICS.every(([name]) => source.text.includes(\`export const \${name}\`));
+    BITCAST_INTRINSICS.every(([name]) => source.text.includes(`export const ${name}`));
 }
 
 function lowerFloatBitcasts(source: ts.SourceFile): NativeClangResult {
@@ -259,7 +259,7 @@ function lowerFloatBitcasts(source: ts.SourceFile): NativeClangResult {
     const original = declaration.initializer;
     if (!original || !ts.isArrowFunction(original) || original.parameters.length !== 1 ||
         !ts.isIdentifier(original.parameters[0]!.name)) {
-      throw new Error(\`Unexpected float bitcast implementation \${name}\`);
+      throw new Error(`Unexpected float bitcast implementation ${name}`);
     }
     const rewritten = factory.updateArrowFunction(
       original, original.modifiers, original.typeParameters, original.parameters,
@@ -295,7 +295,7 @@ function builtinIntrinsic(expression: ts.LeftHandSideExpression): string | undef
     return undefined;
   }
   if (ts.isPropertyAccessExpression(expression) && ts.isIdentifier(expression.expression)) {
-    return BUILTIN_METHODS[\`\${expression.expression.text}.\${expression.name.text}\`];
+    return BUILTIN_METHODS[`${expression.expression.text}.${expression.name.text}`];
   }
   return undefined;
 }
@@ -325,7 +325,7 @@ function nativeNumericCalls(source: ts.SourceFile): NativeClangResult {
   }
   const prelude = [...intrinsics].map(name => {
     const signature = NATIVE_NUMERIC_INTRINSICS[name];
-    if (!signature) throw new Error(\`No C intrinsic contract for \${name}\`);
+    if (!signature) throw new Error(`No C intrinsic contract for ${name}`);
     return signature;
   }).join("\n") + "\n";
   const header = ts.createSourceFile(source.fileName, prelude, ts.ScriptTarget.ES2022, true);
