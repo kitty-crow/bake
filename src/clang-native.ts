@@ -182,6 +182,12 @@ export function lowerNativeClang(
   root: string
 ): NativeClangResult {
   const factory = ts.factory;
+  const isLocalValue = (identifier: ts.Identifier): boolean => {
+    const original = ts.getOriginalNode(identifier) as ts.Identifier;
+    const symbol = checker.getSymbolAtLocation(original);
+    return Boolean(symbol?.declarations?.some(declaration =>
+      !declaration.getSourceFile().isDeclarationFile));
+  };
   const diagnostics: BakeDiagnostic[] = [];
   const used = new Set<string>();
   let needsNativeTypes = false;
@@ -247,7 +253,7 @@ export function lowerNativeClang(
           return factory.createTypeReferenceNode("__bake_c_ExternalMemory");
         }
       }
-      if (ts.isNewExpression(node) && ts.isIdentifier(node.expression)) {
+      if (ts.isNewExpression(node) && ts.isIdentifier(node.expression) && !isLocalValue(node.expression)) {
         const native = CONSTRUCTORS[node.expression.text];
         if (native) {
           needsNativeTypes = true;
@@ -255,7 +261,7 @@ export function lowerNativeClang(
         }
       }
       if (ts.isCallExpression(node)) {
-        if (ts.isIdentifier(node.expression)) {
+        if (ts.isIdentifier(node.expression) && !isLocalValue(node.expression)) {
           const name = node.expression.text === "BigInt" ? "__bake_c_bigint"
             : node.expression.text === "Number" ? "__bake_c_number" : undefined;
           if (name) return call(name, node.arguments.map(x => ts.visitNode(x, visit) as ts.Expression));
@@ -264,7 +270,7 @@ export function lowerNativeClang(
           const property = node.expression;
           const operand = property.expression;
           const method = property.name.text;
-          if (ts.isIdentifier(operand)) {
+          if (ts.isIdentifier(operand) && !isLocalValue(operand)) {
             const methodName = METHODS[operand.text + "." + method];
             if (methodName) return call(methodName, node.arguments.map(x => ts.visitNode(x, visit) as ts.Expression));
             if (operand.text === "Atomics") {
