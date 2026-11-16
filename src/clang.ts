@@ -211,10 +211,19 @@ export function lowerClangSourceFile(
     const original = ts.getOriginalNode(initializer);
     const originalFunction = ts.isArrowFunction(original) || ts.isFunctionExpression(original)
       ? original : initializer;
-    const signature = checker.getSignatureFromDeclaration(originalFunction);
-    const inferredReturn = signature
-      ? checker.typeToTypeNode(signature.getReturnType(), originalFunction, ts.NodeBuilderFlags.NoTruncation)
-      : undefined;
+    let inferredReturn = initializer.type;
+    if (!inferredReturn) {
+      // Compiler-synthesised functions have no symbols in the original checker.
+      // Only query the checker when the original function has bound parameters.
+      try {
+        const signature = checker.getSignatureFromDeclaration(originalFunction);
+        inferredReturn = signature
+          ? checker.typeToTypeNode(signature.getReturnType(), originalFunction, ts.NodeBuilderFlags.NoTruncation)
+          : undefined;
+      } catch {
+        // A later backend can diagnose a genuinely untyped synthetic function.
+      }
+    }
     const body = ts.isBlock(initializer.body)
       ? initializer.body
       : factory.createBlock([factory.createReturnStatement(initializer.body)], true);
