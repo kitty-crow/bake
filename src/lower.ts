@@ -157,7 +157,7 @@ export function lowerSourceFile(
 
       const decision = core.decide(BAKE_FACT_FOR_OF, flags, 0, 0);
       if (bakeDecisionAction(decision) !== BAKE_ACTION_LOWER) {
-        if (target === "clang") diagnostics.push(diagnosticAt(root, node, "BK4101", "This for-of loop cannot be lowered to a static indexed loop.", "Use a synchronous for-of over a typed array or tuple with a single identifier binding."));
+        if (target === "clang") diagnostics.push(diagnosticAt(root, node, "BK4101", "error", "This for-of loop cannot be lowered to a static indexed loop.", "Use a synchronous for-of over a typed array or tuple with a single identifier binding."));
         return undefined;
       }
 
@@ -213,7 +213,7 @@ export function lowerSourceFile(
 
       const unsupported = declarations.find(declaration => !ts.isIdentifier(declaration.name) && bindingNeedsManualLowering(declaration.name));
       const missingInitialiser = declarations.find(declaration => !ts.isIdentifier(declaration.name) && !declaration.initializer);
-      if (missingInitialiser && target === "clang") diagnostics.push(diagnosticAt(root, missingInitialiser, "BK4102", "Destructuring without an initialiser has no C lowering.", "Give the binding a statically typed initialiser."));
+      if (missingInitialiser && target === "clang") diagnostics.push(diagnosticAt(root, missingInitialiser, "BK4102", "error", "Destructuring without an initialiser has no C lowering.", "Give the binding a statically typed initialiser."));
       const flags = unsupported ? BAKE_FLAG_UNSUPPORTED_BINDING : 0;
       const decision = core.decide(BAKE_FACT_DESTRUCTURE, flags, 0, 0);
       const action = bakeDecisionAction(decision);
