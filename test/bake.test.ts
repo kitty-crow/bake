@@ -2,6 +2,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { spawnSync } from "node:child_process";
+import ts from "typescript";
 import assert from "node:assert/strict";
 import { bake } from "../src/index";
 import { createBakeCoreEngine } from "../src/core-engine";
@@ -218,6 +220,12 @@ test("clang target lowers loops, bindings, nullish and hoists statically bound f
     assert.ok(!emitted.includes("??"));
     assert.ok(!emitted.includes("=>"));
     assert.ok(!emitted.includes("for (const part of"));
+    const generated = ts.createProgram([path.join(root, "out/input.ts")], {
+      strict: true, target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext, types: []
+    });
+    const generatedErrors = ts.getPreEmitDiagnostics(generated);
+    assert.equal(generatedErrors.length, 0,
+      generatedErrors.map(d => ts.flattenDiagnosticMessageText(d.messageText, "\\n")).join("\\n"));
     const manifest = JSON.parse(fs.readFileSync(path.join(root, "out/bake-manifest.json"), "utf8"));
     assert.equal(manifest.target.backend, "clang");
     assert.equal(manifest.target.freestanding, true);
@@ -289,4 +297,26 @@ test("source and tooling directories contain no JavaScript source files", () => 
     }
   };
   for (const name of ["src", "scripts", "test"]) inspect(path.join(repositoryRoot, name));
+});
+
+test("CLI accepts both target forms, defaults to wasm and rejects invalid target values", () => {
+  const cli = path.join(repositoryRoot, "dist/cli.js");
+  const project = path.join(fixtureRoot, "lowering/tsconfig.json");
+  const base = ["--project", project, "--validate-only", "--engine=host"];
+  const run = (...args: string[]) =>
+    spawnSync(process.execPath, [cli, ...base, ...args], { encoding: "utf8" });
+  const implicit = run();
+  const explicit = run("--target=wasm");
+  const clang = run("--target", "clang");
+  const invalid = run("--target=invalid");
+  const missing = run("--target");
+  assert.equal(implicit.status, 0, implicit.stderr);
+  assert.equal(explicit.status, 0, explicit.stderr);
+  assert.equal(clang.status, 0, clang.stderr);
+  assert.equal(implicit.stdout, explicit.stdout);
+  assert.match(clang.stdout, /ready for freestanding C backend validation/);
+  assert.equal(invalid.status, 1);
+  assert.match(invalid.stderr, /Invalid Bake target/);
+  assert.equal(missing.status, 1);
+  assert.match(missing.stderr, /Missing value for --target/);
 });

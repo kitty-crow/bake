@@ -136,7 +136,9 @@ export function analyseSourceFile(
             code,
             "error",
             `${ts.isParameter(node) ? "Parameter" : ts.isPropertyDeclaration(node) ? "Property" : "Variable"} ${node.name.text} is inferred as unknown.`,
-            "Give the value a deterministic native type before Bake emits target-lowered source.",
+            target === "wasm"
+              ? "Give the value a deterministic native type before Bake emits Baguette-target source."
+              : "Give the value a deterministic native type before Bake emits C-target source.",
             suggestion
           ));
         }
@@ -193,7 +195,9 @@ export function analyseSourceFile(
           code,
           "error",
           `External runtime module ${JSON.stringify(node.moduleSpecifier.text)} is not part of the statically linked TypeScript graph.`,
-          "Link its TypeScript source into the project or expose the operation through an explicit target-specific native capability."
+          target === "wasm"
+            ? "Link its TypeScript source into the project or expose the required operation as an explicit WebAssembly host capability."
+            : "Link its TypeScript source into the project or expose the operation through an explicit freestanding native capability."
         ));
       }
     }
