@@ -5,6 +5,7 @@
     "moduleResolution": "Node",
     "rootDir": "src/core",
     "strict": true,
+    "allowJs": false,
     "noEmit": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true

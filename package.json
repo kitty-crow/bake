@@ -24,8 +24,8 @@
     "LICENSE"
   ],
   "scripts": {
-    "clean": "node -e \"const fs=require('node:fs');fs.rmSync('dist',{recursive:true,force:true});fs.rmSync('dist-test',{recursive:true,force:true})\"",
-    "clean:bootstrap": "node -e \"const fs=require('node:fs');for(const p of ['build/self-host','build/baguette-generated','dist-wasm'])fs.rmSync(p,{recursive:true,force:true})\"",
+    "clean": "bun scripts/clean.ts",
+    "clean:bootstrap": "bun scripts/clean.ts --bootstrap",
     "build": "npm run clean && tsc -p tsconfig.json",
     "postbuild": "bun ./scripts/make-cli-executable.ts",
     "prepare": "npm run build",

@@ -1,8 +1,8 @@
 # Bake
 
-**Bake pre-compiles TypeScript into the deterministic subset accepted by Baguette. It bakes the Baguette.**
+**Bake safely lowers TypeScript for ahead-of-time compilation. The original Baguette-compatible WebAssembly path remains the default.**
 
-Bake is a source-to-source compatibility frontend. It does not execute the programme and never introduces a JavaScript runtime, interpreter, virtual machine or bytecode layer into generated programmes.
+Bake is a target-aware source-to-source compatibility frontend. It does not execute the programme and never introduces a JavaScript runtime, interpreter, virtual machine or bytecode layer into generated programmes.
 
 ```text
 TypeScript
@@ -15,6 +15,30 @@ Baguette AOT compilation
     ↓
 WebAssembly
 ```
+
+## Target selection
+
+The target is the compiler output contract, not the engine used to run Bake's
+compile-time decision core:
+
+```bash
+bake --project tsconfig.json --target=wasm  # default; unchanged Baguette path
+bake --project tsconfig.json                # identical to --target=wasm
+bake --project tsconfig.json --target=clang # freestanding C-oriented lowering
+```
+
+`--target=wasm` retains the original validation and transformations. The
+`--target=clang` frontend shares the safe lowering passes, materialises
+inferred static local types, hoists top-level constant functions, removes
+non-null assertions, and rejects constructs that cannot yet be lowered without
+a JavaScript host or changes to programme semantics. Unsupported C-target
+features produce errors and prevent emission rather than silently falling back
+to dynamic JavaScript.
+
+The Clang target currently emits **lowered TypeScript**, not C source or a
+bootable binary. A separate C backend and freestanding platform layer are
+required later. Host/Wasm engine choice (`--engine`) is independent of the
+selected output target.
 
 ## Self-hosted core
 

@@ -15,6 +15,13 @@ import {
  * Baguette remains authoritative. Bake mirrors only the explicit validator
  * rules required to give earlier and more actionable diagnostics.
  */
+export type BakeTarget = "wasm" | "clang";
+export const DEFAULT_BAKE_TARGET: BakeTarget = "wasm";
+export function parseBakeTarget(value: string): BakeTarget {
+  if (value === "wasm" || value === "clang") return value;
+  throw new Error(`Invalid Bake target ${JSON.stringify(value)}. Expected wasm or clang.`);
+}
+
 export const BAGUETTE_TARGET_VERSION = "0.2.6";
 export const BAGUETTE_TARGET_COMMIT = "1b7eb13644a7ed80f538a7dc37988654f24d7ce4";
 
