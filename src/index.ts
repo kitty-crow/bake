@@ -90,7 +90,7 @@ export function bake(config: BakeConfig): BakeResult {
     diagnostics.push(...analyseSourceFile(root, source, program, checker, core, target));
     const lowered = lowerSourceFile(root, source, checker, core, target);
     diagnostics.push(...lowered.diagnostics);
-    const native = target === "clang" ? lowerNativeClang(lowered.sourceFile) : undefined;
+    const native = target === "clang" ? lowerNativeClang(lowered.sourceFile, checker, root) : undefined;
     if (native) {
       diagnostics.push(...native.diagnostics);
       if (native.intrinsics.length) cIntrinsics.push({
