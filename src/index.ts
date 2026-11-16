@@ -3,6 +3,7 @@ import path from "node:path";
 import ts from "typescript";
 import { analyseSourceFile } from "./analyse";
 import { analyseClangSourceFile, lowerClangSourceFile } from "./clang";
+import { lowerNativeClang } from "./clang-native";
 import { createBakeCoreEngine } from "./core-engine";
 import { formatDiagnostic } from "./diagnostics";
 import { lowerSourceFile } from "./lower";
@@ -84,17 +85,28 @@ export function bake(config: BakeConfig): BakeResult {
   const printer = ts.createPrinter({ newLine: ts.NewLineKind.LineFeed, removeComments: false });
 
   const outputs: Array<{ path: string; text: string }> = [];
+  const cIntrinsics: Array<{ file: string; required: readonly string[] }> = [];
   for (const source of files) {
     diagnostics.push(...analyseSourceFile(root, source, program, checker, core, target));
-    if (target === "clang") diagnostics.push(...analyseClangSourceFile(root, source, checker));
     const lowered = lowerSourceFile(root, source, checker, core, target);
     diagnostics.push(...lowered.diagnostics);
+    // Materialise original TypeScript types before rewriting host types and
+    // calls into native C intrinsics. The Wasm output path remains untouched.
     const clang = target === "clang" ? lowerClangSourceFile(lowered.sourceFile, checker) : undefined;
     if (clang) diagnostics.push(...clang.diagnostics);
+    const native = target === "clang" ? lowerNativeClang(clang!.sourceFile, checker, root) : undefined;
+    if (native) {
+      diagnostics.push(...native.diagnostics);
+      if (native.intrinsics.length) cIntrinsics.push({
+        file: path.relative(root, source.fileName).split(path.sep).join("/"),
+        required: native.intrinsics
+      });
+      diagnostics.push(...analyseClangSourceFile(root, native.sourceFile, checker));
+    }
     if (!config.validateOnly) {
       outputs.push({
         path: outputPathFor(source, root, config.outDir, commonRoot),
-        text: printer.printFile(clang?.sourceFile ?? lowered.sourceFile)
+        text: printer.printFile(native?.sourceFile ?? lowered.sourceFile)
       });
     }
   }
@@ -139,7 +151,8 @@ export function bake(config: BakeConfig): BakeResult {
       coreAbi: core.version,
       target: target === "wasm"
         ? { compiler: "Baguette", version: BAGUETTE_TARGET_VERSION, commit: BAGUETTE_TARGET_COMMIT }
-        : { compiler: "C", backend: "clang", format: "lowered-typescript", freestanding: true },
+        : { compiler: "C", backend: "clang", format: "lowered-typescript", freestanding: true,
+            intrinsicAbi: 1, intrinsics: cIntrinsics },
       sourceProject: path.relative(root, path.resolve(config.project)).split(path.sep).join("/"),
       generatedProject: path.relative(root, generatedProject).split(path.sep).join("/"),
       sourceFiles: outputs.map(output => path.relative(outputRoot, output.path).split(path.sep).join("/"))

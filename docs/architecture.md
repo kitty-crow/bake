@@ -96,3 +96,5 @@ backend must eventually define precise representations for integer-width
 aliases, memory, atomics, functions, records, arrays and platform capabilities.
 The existing `wasm` output path and self-hosted Bake core contract are not
 modified by target-specific rules.
+
+The Clang frontend also lowers typed memory, DataView, Atomics, BigInt and selected Math/Number operations to declared native intrinsics. It preserves Thistle source functions and memory bounds checks rather than substituting a second kernel implementation. The explicit ABI is documented in [Clang intrinsic contract](clang-intrinsics.md).

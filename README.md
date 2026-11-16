@@ -31,7 +31,7 @@ bake --project tsconfig.json --target=clang # freestanding C-oriented lowering
 `--target=clang` frontend shares the safe lowering passes, materialises
 inferred static local types, hoists top-level constant functions, removes
 non-null assertions, and rejects constructs that cannot yet be lowered without
-a JavaScript host or changes to programme semantics. Unsupported C-target
+a JavaScript host or changes to programme semantics. The C-specific native memory, DataView, typed-array, BigInt and atomic operations lower to explicit freestanding intrinsics, retaining the original Thistle control flow. Unsupported C-target
 features produce errors and prevent emission rather than silently falling back
 to dynamic JavaScript.
 
@@ -39,6 +39,9 @@ The Clang target currently emits **lowered TypeScript**, not C source or a
 bootable binary. A separate C backend and freestanding platform layer are
 required later. Host/Wasm engine choice (`--engine`) is independent of the
 selected output target.
+
+See [Clang intrinsic contract](docs/clang-intrinsics.md) for the required
+native operations and their semantics.
 
 ## Self-hosted core
 
