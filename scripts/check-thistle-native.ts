@@ -99,6 +99,22 @@ try {
     };
     ts.forEachChild(ast, inspect);
   }
+  const nativeMemory = sources.find(file => file.endsWith(path.join("native", "memory.ts")));
+  const nativeWord = sources.find(file => file.endsWith(path.join("native", "word.ts")));
+  if (!nativeMemory || !nativeWord) throw new Error("Thistle native memory and word source missing");
+  const memoryText = fs.readFileSync(nativeMemory, "utf8");
+  const wordText = fs.readFileSync(nativeWord, "utf8");
+  if (!memoryText.includes("function range(") ||
+      !memoryText.includes("if (memory.shared)") ||
+      !memoryText.includes("__bake_c_f64_is_integer") ||
+      !memoryText.includes("__bake_c_u8_copy_within") ||
+      !memoryText.includes("__bake_c_atomic_add_u64")) {
+    throw new Error("Thistle memory control flow was not preserved by native lowering");
+  }
+  if (!wordText.includes("__bake_c_view_get_f64") ||
+      !wordText.includes("__bake_c_view_set_f32")) {
+    throw new Error("Thistle floating-point bit reinterpretation was not lowered");
+  }
   if (!intrinsicNames.has("__bake_c_atomic_add_u64") ||
       !intrinsicNames.has("__bake_c_as_uint_n") ||
       !intrinsicNames.has("__bake_c_view_get_f64")) {
