@@ -2,6 +2,8 @@
 import path from "node:path";
 import type { BakeEngineMode } from "./core-engine";
 import { bake, printBakeResult } from "./index";
+import { parseBakeTarget } from "./target";
+import type { BakeTarget } from "./target";
 
 interface ParsedArgs {
   project: string;
@@ -10,6 +12,7 @@ interface ParsedArgs {
   reportFile?: string;
   failOnWarnings: boolean;
   engine: BakeEngineMode;
+  target: BakeTarget;
   wasmFile?: string;
 }
 
@@ -26,8 +29,16 @@ function engineAfter(args: string[]): BakeEngineMode {
   throw new Error(`Invalid Bake engine ${JSON.stringify(value)}. Expected auto, host or wasm.`);
 }
 
+function targetAfter(args: string[]): BakeTarget {
+  const specified = args.some(arg => arg === "--target" || arg.startsWith("--target="));
+  const value = valueAfter(args, "--target");
+  if (specified && (!value || value.startsWith("--")))
+    throw new Error("Missing value for --target. Expected wasm or clang.");
+  return parseBakeTarget(value ?? "wasm");
+}
+
 function usage(): string {
-  return `Bake 0.2.0-dev\n\nUsage:\n  bake [--project tsconfig.json] [--out-dir build/bake]\n       [--validate-only] [--report bake-report.json] [--fail-on-warnings]\n       [--engine auto|wasm|host] [--wasm-file dist-wasm/bake-core.wasm]\n\nBake pre-compiles TypeScript into the deterministic subset accepted by\nBaguette. The auto engine uses the self-baked WebAssembly core when present\nand otherwise falls back to the identical hosted core.\n`;
+  return `Bake 0.2.0-dev\n\nUsage:\n  bake [--project tsconfig.json] [--out-dir build/bake]\n       [--validate-only] [--report bake-report.json] [--fail-on-warnings]\n       [--engine auto|wasm|host] [--wasm-file dist-wasm/bake-core.wasm]\n       [--target wasm|clang]\n\nBake pre-compiles TypeScript into the deterministic subset accepted by\nBaguette by default (--target=wasm). --target=clang prepares a strict C-oriented\nTypeScript subset for a future freestanding C compiler. The auto engine uses\nthe self-baked WebAssembly core when present\nand otherwise falls back to the identical hosted core.\n`;
 }
 
 function parseArgs(args: string[]): ParsedArgs {
@@ -44,6 +55,7 @@ function parseArgs(args: string[]): ParsedArgs {
     reportFile: valueAfter(args, "--report"),
     failOnWarnings: args.includes("--fail-on-warnings"),
     engine: engineAfter(args),
+    target: targetAfter(args),
     wasmFile: wasmFile ? path.resolve(wasmFile) : undefined
   };
 }

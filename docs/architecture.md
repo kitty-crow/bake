@@ -74,3 +74,25 @@ Bake-generated output is ordinary TypeScript source. Bake does not add a VM, int
 - array helper expansion;
 - optional-chain lowering with single-evaluation temporaries;
 - discriminated-union reconstruction from `unknown` guards.
+
+## Target-aware frontend
+
+The CLI accepts `--target=wasm|clang`, defaulting to `wasm` for the
+existing Baguette contract. `--engine=host|wasm|auto` still selects only the
+compile-time Bake policy implementation; it does not change the output target.
+
+The `clang` target reuses the core's existing safe lowering decisions but adds
+separate C-specific validation and TypeScript normalisation. It materialises
+statically inferred scalar types where possible, hoists top-level const-bound
+functions and removes erased non-null assertions. It rejects unsupported
+closures, exception and async semantics, dynamic allocation and JavaScript
+host constructs. Unsafe nullish expressions and unsupported iteration or
+binding constructs fail closed. No C runtime, JavaScript interpreter, or host
+implementation is introduced.
+
+The output remains TypeScript in a constrained form. It is **not** a C emitter
+or a guarantee that the full Thistle kernel is currently C-ready. The C
+backend must eventually define precise representations for integer-width
+aliases, memory, atomics, functions, records, arrays and platform capabilities.
+The existing `wasm` output path and self-hosted Bake core contract are not
+modified by target-specific rules.

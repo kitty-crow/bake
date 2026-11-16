@@ -19,6 +19,7 @@ import {
 import { diagnosticAt } from "./diagnostics";
 import { bakeDiagnosticCode } from "./target";
 import type { BakeDiagnostic } from "./types";
+import type { BakeTarget } from "./target";
 
 interface LowerResult {
   readonly sourceFile: ts.SourceFile;
@@ -40,6 +41,17 @@ function isPureExpression(expression: ts.Expression): boolean {
     ts.isElementAccessExpression(expression) && isPureExpression(expression.expression) && Boolean(expression.argumentExpression && isPureExpression(expression.argumentExpression));
 }
 
+function clangRepeatable(expression: ts.Expression): boolean {
+  if (ts.isParenthesizedExpression(expression) || ts.isNonNullExpression(expression) ||
+      ts.isAsExpression(expression) || ts.isTypeAssertionExpression(expression))
+    return clangRepeatable(expression.expression);
+  // Only duplicate expressions without observable reads or side effects.
+  return ts.isIdentifier(expression) || ts.isLiteralExpression(expression) ||
+    expression.kind === ts.SyntaxKind.NullKeyword ||
+    expression.kind === ts.SyntaxKind.TrueKeyword ||
+    expression.kind === ts.SyntaxKind.FalseKeyword;
+}
+
 function isArrayLikeExpression(expression: ts.Expression, checker: ts.TypeChecker): boolean {
   const type = checker.getTypeAtLocation(expression);
   return checker.isArrayType(type) || checker.isTupleType(type);
@@ -49,7 +61,8 @@ export function lowerSourceFile(
   root: string,
   source: ts.SourceFile,
   checker: ts.TypeChecker,
-  core: BakeCoreEngine
+  core: BakeCoreEngine,
+  target: BakeTarget = "wasm"
 ): LowerResult {
   const diagnostics: BakeDiagnostic[] = [];
   let changed = false;
@@ -79,7 +92,7 @@ export function lowerSourceFile(
       let firstNonNullable = -1;
       for (let index = 0; index < operands.length - 1; index++) {
         const operand = operands[index]!;
-        if (!isPureExpression(operand)) flags |= BAKE_FLAG_IMPURE;
+        if (!isPureExpression(operand) || (target === "clang" && !clangRepeatable(operand))) flags |= BAKE_FLAG_IMPURE;
 
         const operandType = checker.getTypeAtLocation(operand);
         const parts = operandType.isUnion() ? operandType.types : [operandType];
@@ -100,7 +113,7 @@ export function lowerSourceFile(
           root,
           node,
           bakeDiagnosticCode(bakeDecisionDiagnostic(decision)),
-          "warning",
+          target === "clang" ? "error" : "warning",
           impure
             ? "Bake left this nullish-coalescing expression unchanged because an operand may have side effects."
             : "Bake did not lower this undefined-sensitive nullish expression.",
@@ -143,7 +156,10 @@ export function lowerSourceFile(
       }
 
       const decision = core.decide(BAKE_FACT_FOR_OF, flags, 0, 0);
-      if (bakeDecisionAction(decision) !== BAKE_ACTION_LOWER) return undefined;
+      if (bakeDecisionAction(decision) !== BAKE_ACTION_LOWER) {
+        if (target === "clang") diagnostics.push(diagnosticAt(root, node, "BK4101", "This for-of loop cannot be lowered to a static indexed loop.", "Use a synchronous for-of over a typed array or tuple with a single identifier binding."));
+        return undefined;
+      }
 
       const declarationList = node.initializer as ts.VariableDeclarationList;
       const declaration = declarationList.declarations[0]!;
@@ -196,6 +212,8 @@ export function lowerSourceFile(
       if (!declarations.some(declaration => !ts.isIdentifier(declaration.name))) return undefined;
 
       const unsupported = declarations.find(declaration => !ts.isIdentifier(declaration.name) && bindingNeedsManualLowering(declaration.name));
+      const missingInitialiser = declarations.find(declaration => !ts.isIdentifier(declaration.name) && !declaration.initializer);
+      if (missingInitialiser && target === "clang") diagnostics.push(diagnosticAt(root, missingInitialiser, "BK4102", "Destructuring without an initialiser has no C lowering.", "Give the binding a statically typed initialiser.");
       const flags = unsupported ? BAKE_FLAG_UNSUPPORTED_BINDING : 0;
       const decision = core.decide(BAKE_FACT_DESTRUCTURE, flags, 0, 0);
       const action = bakeDecisionAction(decision);
@@ -204,7 +222,7 @@ export function lowerSourceFile(
           root,
           unsupported,
           bakeDiagnosticCode(bakeDecisionDiagnostic(decision)),
-          "warning",
+          target === "clang" ? "error" : "warning",
           "Bake left destructuring with defaults, rest elements or nested unsupported bindings unchanged.",
           "Rewrite it as explicit indexed or property assignments so each native value has a deterministic source."
         ));

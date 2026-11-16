@@ -2,10 +2,11 @@ import fs from "node:fs";
 import path from "node:path";
 import ts from "typescript";
 import { analyseSourceFile } from "./analyse";
+import { analyseClangSourceFile, lowerClangSourceFile } from "./clang";
 import { createBakeCoreEngine } from "./core-engine";
 import { formatDiagnostic } from "./diagnostics";
 import { lowerSourceFile } from "./lower";
-import { BAGUETTE_TARGET_COMMIT, BAGUETTE_TARGET_VERSION } from "./target";
+import { BAGUETTE_TARGET_COMMIT, BAGUETTE_TARGET_VERSION, DEFAULT_BAKE_TARGET, parseBakeTarget } from "./target";
 import type { BakeConfig, BakeDiagnostic, BakeResult } from "./types";
 
 export * from "./types";
@@ -72,6 +73,7 @@ function commonDirectory(files: readonly string[]): string {
 }
 
 export function bake(config: BakeConfig): BakeResult {
+  const target = parseBakeTarget(config.target ?? DEFAULT_BAKE_TARGET);
   const core = createBakeCoreEngine(config.engine ?? "auto", config.wasmFile);
   const { program, root } = parseProject(config.project);
   const checker = program.getTypeChecker();
@@ -83,13 +85,16 @@ export function bake(config: BakeConfig): BakeResult {
 
   const outputs: Array<{ path: string; text: string }> = [];
   for (const source of files) {
-    diagnostics.push(...analyseSourceFile(root, source, program, checker, core));
-    const lowered = lowerSourceFile(root, source, checker, core);
+    diagnostics.push(...analyseSourceFile(root, source, program, checker, core, target));
+    if (target === "clang") diagnostics.push(...analyseClangSourceFile(root, source, checker));
+    const lowered = lowerSourceFile(root, source, checker, core, target);
     diagnostics.push(...lowered.diagnostics);
+    const clang = target === "clang" ? lowerClangSourceFile(lowered.sourceFile, checker) : undefined;
+    if (clang) diagnostics.push(...clang.diagnostics);
     if (!config.validateOnly) {
       outputs.push({
         path: outputPathFor(source, root, config.outDir, commonRoot),
-        text: printer.printFile(lowered.sourceFile)
+        text: printer.printFile(clang?.sourceFile ?? lowered.sourceFile)
       });
     }
   }
@@ -132,7 +137,9 @@ export function bake(config: BakeConfig): BakeResult {
       version: "0.2.0-dev",
       engine: core.implementation,
       coreAbi: core.version,
-      target: { compiler: "Baguette", version: BAGUETTE_TARGET_VERSION, commit: BAGUETTE_TARGET_COMMIT },
+      target: target === "wasm"
+        ? { compiler: "Baguette", version: BAGUETTE_TARGET_VERSION, commit: BAGUETTE_TARGET_COMMIT }
+        : { compiler: "C", backend: "clang", format: "lowered-typescript", freestanding: true },
       sourceProject: path.relative(root, path.resolve(config.project)).split(path.sep).join("/"),
       generatedProject: path.relative(root, generatedProject).split(path.sep).join("/"),
       sourceFiles: outputs.map(output => path.relative(outputRoot, output.path).split(path.sep).join("/"))
@@ -148,14 +155,16 @@ export function bake(config: BakeConfig): BakeResult {
       version: "0.2.0-dev",
       engine: core.implementation,
       coreAbi: core.version,
-      target: `Baguette ${BAGUETTE_TARGET_VERSION} (${BAGUETTE_TARGET_COMMIT})`,
+      target: target === "wasm"
+        ? `Baguette ${BAGUETTE_TARGET_VERSION} (${BAGUETTE_TARGET_COMMIT})`
+        : "clang (freestanding C frontend)",
       success,
       emittedFiles: emittedFiles.map(file => path.relative(root, file).split(path.sep).join("/")),
       diagnostics
     }, null, 2) + "\n", "utf8");
   }
 
-  return { success, engine: core.implementation, emittedFiles, diagnostics };
+  return { success, target, engine: core.implementation, emittedFiles, diagnostics };
 }
 
 export function printBakeResult(result: BakeResult): void {
@@ -165,5 +174,5 @@ export function printBakeResult(result: BakeResult): void {
   }
   const errors = result.diagnostics.filter(item => item.severity === "error").length;
   const warnings = result.diagnostics.filter(item => item.severity === "warning").length;
-  process.stdout.write(`Bake (${result.engine} core): ${result.success ? "ready for Baguette validation" : "source needs attention"}; ${errors} error(s), ${warnings} warning(s), ${result.emittedFiles.length} file(s) emitted.\n`);
+  process.stdout.write(`Bake (${result.engine} core): ${result.success ? result.target === "wasm" ? "ready for Baguette validation" : "ready for freestanding C backend validation" : "source needs attention"}; ${errors} error(s), ${warnings} warning(s), ${result.emittedFiles.length} file(s) emitted.\n`);
 }
