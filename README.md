@@ -24,14 +24,15 @@ compile-time decision core:
 ```bash
 bake --project tsconfig.json --target=wasm  # default; unchanged Baguette path
 bake --project tsconfig.json                # identical to --target=wasm
-bake --project tsconfig.json --target=clang # freestanding C-oriented lowering
+bake --project tsconfig.json --target=clang # native lowering for Croissant (C)
+bake --project tsconfig.json --target=rust  # native lowering for Crust (Rust)
 ```
 
 `--target=wasm` retains the original validation and transformations. The
 `--target=clang` frontend shares the safe lowering passes, materialises
 inferred static local types, hoists top-level constant functions, removes
 non-null assertions, and rejects constructs that cannot yet be lowered without
-a JavaScript host or changes to programme semantics. The C-specific native memory, DataView, typed-array, BigInt and atomic operations lower to explicit freestanding intrinsics, retaining the original Thistle control flow. Unsupported C-target
+a JavaScript host or changes to programme semantics. The native memory, DataView, typed-array, BigInt and atomic operations lower to explicit freestanding intrinsics, retaining the original Thistle control flow. Unsupported C-target
 features produce errors and prevent emission rather than silently falling back
 to dynamic JavaScript.
 
@@ -39,6 +40,11 @@ The Clang target currently emits **lowered TypeScript**, not C source or a
 bootable binary. A separate C backend and freestanding platform layer are
 required later. Host/Wasm engine choice (`--engine`) is independent of the
 selected output target.
+
+The Rust target uses the same native lowering and intrinsic ABI as Clang.
+Its manifest identifies Crust with `backend: "rust"`. Bake emits lowered
+TypeScript, not Rust, and does not invoke rustc. The `__bake_c_*` names remain
+unchanged for ABI compatibility.
 
 See [Clang intrinsic contract](docs/clang-intrinsics.md) for the required
 native operations and their semantics.

@@ -30,3 +30,14 @@ Do not import the Clang-specific diagnostics or transformations into the Wasm
 policy core. Omitted `--target` and `--target=wasm` must yield byte-identical
 source output for the same input, and preserve Baguette's manifest contract.
 The host and Wasm Bake policy engines must continue to agree on every fact.
+
+## Rust target
+
+`bake --target=rust` shares the Clang target's strict native lowering.
+It emits lowered TypeScript with the same intrinsic ABI (version 1), including
+the existing `__bake_c_*` names. The manifest distinguishes Crust with
+`compiler: "Crust"` and `backend: "rust"`; the format remains
+`lowered-typescript` and `freestanding` remains true.
+
+Crust owns Rust type representation, ownership, code generation and final
+validation. Bake does not emit Rust or invoke rustc.

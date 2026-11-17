@@ -2,7 +2,9 @@
 
 `bake --target=clang` emits TypeScript with statically declared
 `__bake_c_*` operations. It does not emit C and does not link a runtime.
-The declarations are obligations for a future C backend and platform layer.
+The same declarations are emitted by `--target=rust` for Crust.
+The identifiers are retained for ABI compatibility. The declarations are
+obligations for the consuming native backend and platform layer.
 The source logic remains in Thistle. Bake rewrites expressions and types,
 not entire kernel modules.
 
@@ -59,6 +61,8 @@ value. Integer additions wrap at the cell width. The original
 boundary for `clang`, type-checks the generated TypeScript and rejects
 remaining JavaScript host calls. CI also runs the original Bake test suite
 and builds/uses the Baguette-compiled WASM policy core.
+
+The native acceptance script runs for both Clang and Rust targets.
 
 A successful Bake run means the source meets this frontend contract.
 It does **not** imply a linked, bootable kernel or an implemented C backend.
