@@ -15,11 +15,15 @@ import {
  * Baguette remains authoritative. Bake mirrors only the explicit validator
  * rules required to give earlier and more actionable diagnostics.
  */
-export type BakeTarget = "wasm" | "clang";
+export type BakeTarget = "wasm" | "clang" | "rust";
+export function isNativeTarget(target: BakeTarget): target is "clang" | "rust" {
+  return target !== "wasm";
+}
+
 export const DEFAULT_BAKE_TARGET: BakeTarget = "wasm";
 export function parseBakeTarget(value: string): BakeTarget {
-  if (value === "wasm" || value === "clang") return value;
-  throw new Error(`Invalid Bake target ${JSON.stringify(value)}. Expected wasm or clang.`);
+  if (value === "wasm" || value === "clang" || value === "rust") return value;
+  throw new Error(`Invalid Bake target ${JSON.stringify(value)}. Expected wasm, clang or rust.`);
 }
 
 export const BAGUETTE_TARGET_VERSION = "0.2.6";

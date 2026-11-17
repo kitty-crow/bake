@@ -3,7 +3,7 @@ import { diagnosticAt } from "./diagnostics";
 import type { BakeDiagnostic } from "./types";
 
 /**
- * Clang-target frontend, not a C emitter. Keep this independent of the
+ * Shared freestanding frontend for the Clang and Rust targets. Keep this independent of the
  * Baguette/Bake policy core so the existing Wasm decisions stay unchanged.
  */
 export interface ClangLowerResult {
@@ -63,57 +63,57 @@ export function analyseClangSourceFile(
   const walk = (node: ts.Node, ancestors: readonly ts.Node[] = []): void => {
     const parent = ancestors[ancestors.length - 1];
     if (ts.isTryStatement(node) || ts.isThrowStatement(node)) {
-      report(node, "BK4001", "Exception handling has no freestanding C lowering.",
+      report(node, "BK4001", "Exception handling has no freestanding native lowering.",
         "Use explicit typed status/results; Bake must not invent C exception semantics.");
     }
     if (ts.isAwaitExpression(node) ||
         (ts.canHaveModifiers(node) && ts.getModifiers(node)?.some(m => m.kind === ts.SyntaxKind.AsyncKeyword))) {
-      report(node, "BK4002", "Async execution requires a coroutine or scheduler lowering not yet available for C.",
+      report(node, "BK4002", "Async execution requires a coroutine or scheduler lowering not yet available for native compilation.",
         "Use a synchronous entry point or an explicitly modelled state machine.");
     }
     if (ts.isClassDeclaration(node) || ts.isClassExpression(node)) {
-      report(node, "BK4003", "Class allocation, inheritance and method semantics are not yet lowered for C.",
+      report(node, "BK4003", "Class allocation, inheritance and method semantics are not yet lowered for native compilation.",
         "Use interfaces, explicit records and top-level functions until a verified class lowering exists.");
     }
     if ((ts.isArrowFunction(node) || ts.isFunctionExpression(node)) && !topLevelFunctionBinding(node, ancestors)) {
-      report(node, "BK4004", "This closure cannot be translated into a static C function safely.",
+      report(node, "BK4004", "This closure cannot be translated into a static native function safely.",
         "Use a named top-level function; only const-bound top-level functions are currently hoisted.");
     }
     if (ts.isParameter(node) && !ts.isIdentifier(node.name)) {
-      report(node, "BK4010", "Destructured function parameters are not lowered for C.",
+      report(node, "BK4010", "Destructured function parameters are not lowered for native compilation.",
         "Accept an explicit typed parameter and destructure it in the function body.");
     }
     if (ts.isVariableDeclaration(node) && !ts.isIdentifier(node.name) &&
         (!parent || !ts.isVariableDeclarationList(parent) ||
          !ancestors[ancestors.length - 2] || !ts.isVariableStatement(ancestors[ancestors.length - 2]!))) {
-      report(node, "BK4011", "Destructuring outside a local variable statement is not lowered for C.",
+      report(node, "BK4011", "Destructuring outside a local variable statement is not lowered for native compilation.",
         "Use a simple identifier binding and explicit field/index access.");
     }
     if (ts.isNewExpression(node)) {
-      report(node, "BK4005", "Dynamic 'new' allocation has no freestanding C memory contract.",
+      report(node, "BK4005", "Dynamic 'new' allocation has no freestanding native memory contract.",
         "Use an explicit typed allocator and an initialisation function.");
     }
     if (ts.isSpreadElement(node) || ts.isSpreadAssignment(node) ||
         ts.isRestTypeNode(node)) {
-      report(node, "BK4006", "Runtime spread/rest construction is not lowered for C.",
+      report(node, "BK4006", "Runtime spread/rest construction is not lowered for native compilation.",
         "Replace it with explicit copying, fixed-size fields or a statically typed buffer.");
     }
     if (ts.isPropertyAccessExpression(node) && node.questionDotToken ||
         ts.isElementAccessExpression(node) && node.questionDotToken ||
         ts.isCallExpression(node) && node.questionDotToken) {
-      report(node, "BK4007", "Optional chaining has no semantics-preserving C lowering yet.",
+      report(node, "BK4007", "Optional chaining has no semantics-preserving native lowering yet.",
         "Use a single-evaluation explicit null check before accessing the value.");
     }
     if (ts.isForInStatement(node) || ts.isDeleteExpression(node) ||
         ts.isTypeOfExpression(node) || ts.isTaggedTemplateExpression(node) ||
         ts.isTemplateExpression(node) || ts.isRegularExpressionLiteral(node)) {
-      report(node, "BK4008", "Dynamic JavaScript operation cannot be represented directly in freestanding C.",
+      report(node, "BK4008", "Dynamic JavaScript operation cannot be represented directly in freestanding native code.",
         "Replace the operation with explicit typed native logic.");
     }
     if (ts.isBinaryExpression(node) &&
         (node.operatorToken.kind === ts.SyntaxKind.InstanceOfKeyword ||
          node.operatorToken.kind === ts.SyntaxKind.InKeyword)) {
-      report(node, "BK4008", "JavaScript object reflection cannot be represented directly in freestanding C.",
+      report(node, "BK4008", "JavaScript object reflection cannot be represented directly in freestanding native code.",
         "Use a statically typed discriminant or explicit field test.");
     }
     if (ts.isIdentifier(node) &&
@@ -162,7 +162,7 @@ function typeFor(
 
 /**
  * Materialise static types and lift top-level function constants into named
- * declarations. This is TypeScript output for a future C backend, not C code.
+ * declarations. This is TypeScript output for native backends, not C or Rust code.
  */
 export function lowerClangSourceFile(
   source: ts.SourceFile,

@@ -138,7 +138,7 @@ export function analyseSourceFile(
             `${ts.isParameter(node) ? "Parameter" : ts.isPropertyDeclaration(node) ? "Property" : "Variable"} ${node.name.text} is inferred as unknown.`,
             target === "wasm"
               ? "Give the value a deterministic native type before Bake emits Baguette-target source."
-              : "Give the value a deterministic native type before Bake emits C-target source.",
+              : "Give the value a deterministic native type before Bake emits freestanding native source.",
             suggestion
           ));
         }
