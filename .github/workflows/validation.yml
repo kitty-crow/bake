@@ -1,0 +1,115 @@
+name: Lowerer validation
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  validate:
+    name: Validate lowerer
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+        with:
+          path: bake
+          submodules: recursive
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        working-directory: bake
+        run: bun install --frozen-lockfile
+      - name: Strict Code Guards
+        working-directory: bake
+        run: bun run guards
+      - name: Type-check lowerer
+        working-directory: bake
+        run: bun run check
+      - name: Test lowerer
+        working-directory: bake
+        run: bun run test
+  wasm:
+    name: Validate WASM lowering
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+        with:
+          path: bake
+          submodules: recursive
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        working-directory: bake
+        run: bun install --frozen-lockfile
+      - name: Validate lowered source
+        working-directory: bake
+        run: bun test test/bake.test.ts -t 'omitted target and explicit wasm target'
+  clang:
+    name: Validate C lowering
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+        with:
+          path: bake
+          submodules: recursive
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        working-directory: bake
+        run: bun install --frozen-lockfile
+      - name: Download Thistle source fixture
+        env:
+          GH_TOKEN: ${{ github.token }}
+          THISTLE_TAG: v2.2.1
+          THISTLE_COMMIT: 76932c85c4db2eb481345aafe8611e6f53de9d85
+        run: |
+          set -euo pipefail
+          ref="$(git ls-remote https://github.com/kittycrow-kittyx/thistle.git "refs/tags/$THISTLE_TAG^{}" | cut -f1)"
+          test "$ref" = "$THISTLE_COMMIT"
+          download="$(mktemp -d)"
+          trap 'rm -rf "$download"' EXIT
+          gh release download "$THISTLE_TAG" --repo kittycrow-kittyx/thistle --pattern "thistle-$THISTLE_TAG.tar.gz" --pattern SHA256SUMS --dir "$download"
+          (cd "$download" && sha256sum -c SHA256SUMS)
+          mkdir -p thistle
+          tar -xzf "$download/thistle-$THISTLE_TAG.tar.gz" -C thistle
+          test "$(cat thistle/RELEASE_COMMIT)" = "$THISTLE_COMMIT"
+      - name: Validate lowered source
+        working-directory: bake
+        run: bun scripts/check-thistle-native.ts ../thistle clang
+  rust:
+    name: Validate Rust lowering
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+        with:
+          path: bake
+          submodules: recursive
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        working-directory: bake
+        run: bun install --frozen-lockfile
+      - name: Download Thistle source fixture
+        env:
+          GH_TOKEN: ${{ github.token }}
+          THISTLE_TAG: v2.2.1
+          THISTLE_COMMIT: 76932c85c4db2eb481345aafe8611e6f53de9d85
+        run: |
+          set -euo pipefail
+          ref="$(git ls-remote https://github.com/kittycrow-kittyx/thistle.git "refs/tags/$THISTLE_TAG^{}" | cut -f1)"
+          test "$ref" = "$THISTLE_COMMIT"
+          download="$(mktemp -d)"
+          trap 'rm -rf "$download"' EXIT
+          gh release download "$THISTLE_TAG" --repo kittycrow-kittyx/thistle --pattern "thistle-$THISTLE_TAG.tar.gz" --pattern SHA256SUMS --dir "$download"
+          (cd "$download" && sha256sum -c SHA256SUMS)
+          mkdir -p thistle
+          tar -xzf "$download/thistle-$THISTLE_TAG.tar.gz" -C thistle
+          test "$(cat thistle/RELEASE_COMMIT)" = "$THISTLE_COMMIT"
+      - name: Validate lowered source
+        working-directory: bake
+        run: bun scripts/check-thistle-native.ts ../thistle rust

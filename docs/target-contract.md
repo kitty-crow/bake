@@ -1,17 +1,36 @@
-# Baguette target contract
+# Target contracts
 
-Bake 0.2 targets the explicit validator behaviour of Baguette 0.2.6 at commit `1b7eb13644a7ed80f538a7dc37988654f24d7ce4`.
+`--target` selects the output contract. `--engine` independently selects the
+implementation of the compile-time policy core.
 
-Bake reports these constructs before Baguette is invoked:
+## WebAssembly (`wasm`)
 
-- explicit or inferred `any`;
-- unresolved `unknown`;
-- runtime-computed `import()`;
-- unresolved external runtime modules;
-- generators and `yield`;
-- async closures outside Baguette's supported named forms;
-- ambient JavaScript host facilities including `eval`, `Function`, `Proxy`, `Reflect`, browser globals, Node globals and Bun globals.
+The default target mirrors the validator rules of Baguette 0.2.6 at commit
+`1b7eb13644a7ed80f538a7dc37988654f24d7ce4`.
 
-Syntax that Baguette already accepts is passed through unchanged when Bake does not need to lower it. This includes `try` and `throw`; Baguette remains responsible for their final native interpretation and validation.
+| Construct | Policy |
+| --- | --- |
+| Explicit or inferred `any`, unresolved `unknown` | Reject |
+| Runtime-computed imports and external runtime modules | Reject |
+| Generators, unsupported async closures, ambient JavaScript facilities | Reject |
+| `try` and `throw` | Preserve |
+| Emitted TypeScript | Validate with Baguette |
 
-The mirrored contract is diagnostic assistance, not a fork of Baguette's language definition. Baguette remains authoritative.
+Omitting `--target` produces the same output as `--target=wasm`.
+
+## Native (`clang`, `rust`)
+
+Both native targets materialise static local types, hoist top-level const-bound
+functions, erase non-null assertions and lower supported buffer, typed-array,
+DataView, numeric and atomic operations to the declared native intrinsics.
+Unsupported dynamic behaviour and unsafe transformations are errors.
+
+| Target | Manifest backend | Compiler |
+| --- | --- | --- |
+| `clang` | `clang` | Croissant |
+| `rust` | `rust` | Crust |
+
+Both emit `lowered-typescript` with `freestanding: true` and native intrinsic
+ABI 1. The Rust target identifies `Crust` in the compiler field. Neither
+invokes a native compiler. Consumers define concrete type representations and
+implement the [intrinsic ABI](clang-intrinsics.md).

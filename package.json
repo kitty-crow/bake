@@ -1,7 +1,7 @@
 {
   "name": "@kitty-crow/bake",
-  "version": "0.2.0-dev.0",
-  "description": "Pre-compile TypeScript into the deterministic subset accepted by Baguette.",
+  "version": "1.0.1",
+  "description": "Lower TypeScript into deterministic subsets for Baguette, Croissant and Crust.",
   "license": "MIT",
   "author": {
     "name": "Kitty Crow",
@@ -9,42 +9,33 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/kitty-crow/bake.git"
+    "url": "https://github.com/kittycrow-kittyx/bake.git"
   },
   "bin": {
-    "bake": "dist/cli.js"
+    "bake": "src/cli.ts"
   },
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
   "files": [
-    "dist",
-    "dist-wasm",
+    "src",
     "docs",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
-    "clean": "node -e \"const fs=require('node:fs');fs.rmSync('dist',{recursive:true,force:true});fs.rmSync('dist-test',{recursive:true,force:true})\"",
-    "clean:bootstrap": "node -e \"const fs=require('node:fs');for(const p of ['build/self-host','build/baguette-generated','dist-wasm'])fs.rmSync(p,{recursive:true,force:true})\"",
-    "build": "npm run clean && tsc -p tsconfig.json",
-    "postbuild": "bun ./scripts/make-cli-executable.ts",
-    "prepare": "npm run build",
-    "bootstrap": "bun ./src/bootstrap.ts",
-    "benchmark:self-host": "bun ./scripts/run-self-host-benchmark.ts",
-    "benchmark:self-host:raw": "bun ./scripts/benchmark-self-host.ts",
-    "benchmark:self-host:analyse": "bun ./scripts/analyse-self-host-benchmark.ts",
-    "check": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.core.json --noEmit",
-    "test": "npm run build && tsc -p tsconfig.test.json && node --test dist-test/test/*.test.js",
-    "test:self-host": "npm run bootstrap && BAKE_ENGINE=wasm npm test"
+    "check": "bun --bun tsc --noEmit -p tsconfig.json && bun --bun tsc --noEmit -p tsconfig.test.json",
+    "test": "bun test test/bake.test.ts",
+    "guards": "bash scripts/guards.sh",
+    "build": "bun run guards && bun run check"
   },
   "dependencies": {
     "typescript": "^5.8.3"
   },
   "devDependencies": {
-    "@types/node": "^22.15.0"
+    "@types/node": "^22.15.0",
+    "@kitty-crow/code-guards": "git+https://github.com/kitty-crow/code-guards.git#d1ce06c6b4a71e5f94ca97ba4b0f6780408aa3f6"
   },
   "engines": {
-    "bun": ">=1.1.0",
-    "node": ">=22.0.0"
+    "bun": ">=1.1.0"
   }
 }
