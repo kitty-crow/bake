@@ -4,7 +4,7 @@ import {
   BAKE_DIAGNOSTIC_ASYNC_CLOSURE,
   BAKE_DIAGNOSTIC_DYNAMIC_IMPORT,
   BAKE_DIAGNOSTIC_EXCEPTION,
-  BAKE_DIAGNOSTIC_EXTERNAL_RUNTIME_IMPORT,
+  BAKE_DIAG_EXTERNAL_IMPORT,
   BAKE_DIAGNOSTIC_GENERATOR,
   BAKE_DIAGNOSTIC_UNKNOWN,
   BAKE_DIAGNOSTIC_UNSAFE_LOWERING
@@ -15,6 +15,17 @@ import {
  * Baguette remains authoritative. Bake mirrors only the explicit validator
  * rules required to give earlier and more actionable diagnostics.
  */
+export type BakeTarget = "wasm" | "clang" | "rust";
+export function isNativeTarget(target: BakeTarget): target is "clang" | "rust" {
+  return target !== "wasm";
+}
+
+export const DEFAULT_BAKE_TARGET: BakeTarget = "wasm";
+export function parseBakeTarget(value: string): BakeTarget {
+  if (value === "wasm" || value === "clang" || value === "rust") return value;
+  throw new Error(`Invalid Bake target ${JSON.stringify(value)}. Expected wasm, clang or rust.`);
+}
+
 export const BAGUETTE_TARGET_VERSION = "0.2.6";
 export const BAGUETTE_TARGET_COMMIT = "1b7eb13644a7ed80f538a7dc37988654f24d7ce4";
 
@@ -53,7 +64,7 @@ export function bakeDiagnosticCode(diagnostic: number): string {
     case BAKE_DIAGNOSTIC_UNKNOWN: return BAKE_DIAGNOSTIC_CODES.unknown;
     case BAKE_DIAGNOSTIC_DYNAMIC_IMPORT: return BAKE_DIAGNOSTIC_CODES.dynamicImport;
     case BAKE_DIAGNOSTIC_AMBIENT_RUNTIME: return BAKE_DIAGNOSTIC_CODES.ambientRuntime;
-    case BAKE_DIAGNOSTIC_EXTERNAL_RUNTIME_IMPORT: return BAKE_DIAGNOSTIC_CODES.externalRuntimeImport;
+    case BAKE_DIAG_EXTERNAL_IMPORT: return BAKE_DIAGNOSTIC_CODES.externalRuntimeImport;
     case BAKE_DIAGNOSTIC_ASYNC_CLOSURE: return BAKE_DIAGNOSTIC_CODES.asyncClosure;
     case BAKE_DIAGNOSTIC_GENERATOR: return BAKE_DIAGNOSTIC_CODES.generator;
     case BAKE_DIAGNOSTIC_EXCEPTION: return BAKE_DIAGNOSTIC_CODES.exception;

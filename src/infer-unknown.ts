@@ -16,16 +16,16 @@ interface UnknownEvidence {
   readonly evidence: string[];
 }
 
-function literalType(expression: ts.Expression): string | undefined {
+function literalType(expression: ts.Expression): string | null {
   if (ts.isStringLiteralLike(expression)) return JSON.stringify(expression.text);
   if (ts.isNumericLiteral(expression)) return expression.text;
   if (expression.kind === ts.SyntaxKind.TrueKeyword) return "true";
   if (expression.kind === ts.SyntaxKind.FalseKeyword) return "false";
   if (ts.isBigIntLiteral(expression)) return expression.text;
-  return undefined;
+  return null;
 }
 
-function typeFromTypeof(text: string): string | undefined {
+function typeFromTypeof(text: string): string | null {
   switch (text) {
     case "string": return "string";
     case "number": return "number";
@@ -33,7 +33,7 @@ function typeFromTypeof(text: string): string | undefined {
     case "bigint": return "bigint";
     case "object": return "object";
     case "undefined": return "undefined";
-    default: return undefined;
+    default: return null;
   }
 }
 
@@ -52,7 +52,7 @@ function unwrap(expression: ts.Expression): ts.Expression {
 function refersToSymbol(expression: ts.Expression, checker: ts.TypeChecker, symbol: ts.Symbol): boolean {
   expression = unwrap(expression);
   if (!ts.isIdentifier(expression)) return false;
-  const found = checker.getSymbolAtLocation(expression);
+  const found = checker.getSymbolAtLocation(expression) ?? null;
   return found === symbol;
 }
 
@@ -60,7 +60,7 @@ function propertyRoot(
   expression: ts.Expression,
   checker: ts.TypeChecker,
   symbol: ts.Symbol
-): { name: string; node: ts.PropertyAccessExpression | ts.ElementAccessExpression } | undefined {
+): { name: string; node: ts.PropertyAccessExpression | ts.ElementAccessExpression } | null {
   expression = unwrap(expression);
   if (ts.isPropertyAccessExpression(expression) && refersToSymbol(expression.expression, checker, symbol)) {
     return { name: expression.name.text, node: expression };
@@ -73,13 +73,13 @@ function propertyRoot(
   ) {
     return { name: expression.argumentExpression.text, node: expression };
   }
-  return undefined;
+  return null;
 }
 
 function ensureProperty(evidence: UnknownEvidence, name: string): PropertyEvidence {
-  let property = evidence.properties.get(name);
+  let property = evidence.properties.get(name) ?? null;
   if (!property) {
-    property = { name, types: new Set(), optional: false, evidence: [] };
+    property = { name, types: new Set<string>(), optional: false, evidence: [] };
     evidence.properties.set(name, property);
   }
   return property;
@@ -100,8 +100,9 @@ function recordTypeofComparison(
     const inferred = typeFromTypeof(value.text);
     if (!inferred) continue;
     const operand = unwrap(candidate.expression);
-    if (refersToSymbol(operand, checker, symbol)) {
-      if (inferred !== "object" && inferred !== "undefined") evidence.primitiveTypes.add(inferred);
+    const isParam = refersToSymbol(operand, checker, symbol);
+    if (isParam && inferred !== "object" && inferred !== "undefined") evidence.primitiveTypes.add(inferred);
+    if (isParam) {
       evidence.evidence.push(`typeof parameter === ${JSON.stringify(value.text)}`);
       continue;
     }
@@ -120,6 +121,7 @@ function recordLiteralComparison(
   symbol: ts.Symbol,
   evidence: UnknownEvidence
 ): void {
+  // Inspect either operand because a literal may occur on either side of an equality comparison.
   const equalityOperators = new Set([
     ts.SyntaxKind.EqualsEqualsToken,
     ts.SyntaxKind.EqualsEqualsEqualsToken,
@@ -149,26 +151,28 @@ function recordLiteralComparison(
   }
 }
 
-function typeTextFromUse(node: ts.Node, checker: ts.TypeChecker): string | undefined {
+function concreteText(type: ts.Type, node: ts.Node, checker: ts.TypeChecker): string | null {
+  const text = checker.typeToString(type, node, ts.TypeFormatFlags.NoTruncation);
+  return !text.includes("any") && !text.includes("unknown") ? text : null;
+}
+
+function parameterType(node: ts.Node, parent: ts.CallExpression, checker: ts.TypeChecker): string | null {
+  const index = parent.arguments.indexOf(node as ts.Expression);
+  const signature = checker.getResolvedSignature(parent) ?? null;
+  const parameter = index >= 0 && signature ? signature.getParameters()[index] ?? null : null;
+  if (!parameter) return null;
+  const declaration = (parameter.valueDeclaration ?? null) ?? ((parameter.declarations ?? [])[0] ?? null) ?? parent;
+  return concreteText(checker.getTypeOfSymbolAtLocation(parameter, declaration), declaration, checker);
+}
+
+function typeTextFromUse(node: ts.Node, checker: ts.TypeChecker): string | null {
   const parent = node.parent;
   if (ts.isBinaryExpression(parent)) {
     const other = parent.left === node ? parent.right : parent.left;
-    const type = checker.getTypeAtLocation(other);
-    const text = checker.typeToString(type, other, ts.TypeFormatFlags.NoTruncation);
-    if (!text.includes("any") && !text.includes("unknown")) return text;
+    return concreteText(checker.getTypeAtLocation(other), other, checker);
   }
-  if (ts.isCallExpression(parent)) {
-    const index = parent.arguments.indexOf(node as ts.Expression);
-    const signature = checker.getResolvedSignature(parent);
-    const parameter = index >= 0 ? signature?.getParameters()[index] : undefined;
-    if (parameter) {
-      const declaration = parameter.valueDeclaration ?? parameter.declarations?.[0] ?? parent;
-      const type = checker.getTypeOfSymbolAtLocation(parameter, declaration);
-      const text = checker.typeToString(type, declaration, ts.TypeFormatFlags.NoTruncation);
-      if (!text.includes("any") && !text.includes("unknown")) return text;
-    }
-  }
-  return undefined;
+  if (ts.isCallExpression(parent)) return parameterType(node, parent, checker);
+  return null;
 }
 
 function safeIdentifier(value: string): string {
@@ -180,7 +184,7 @@ function renderSuggestion(
   functionName: string,
   parameterName: string,
   evidence: UnknownEvidence
-): BakeSuggestion | undefined {
+): BakeSuggestion | null {
   const typeName = `BakeInferred_${safeIdentifier(functionName)}_${safeIdentifier(parameterName)}`;
   const objectProperties = [...evidence.properties.values()];
   const alternatives: string[] = [];
@@ -205,16 +209,16 @@ function renderSuggestion(
     alternatives.push(typeName);
   }
 
-  if (!alternatives.length) return undefined;
+  if (!alternatives.length) return null;
   const replacementType = [...new Set(alternatives)].join(" | ");
   const hasUnresolved = objectProperties.some(property => property.types.size === 0) || evidence.arrayLike;
   const confidence = hasUnresolved ? "low" : objectProperties.length ? "medium" : "high";
   const replacement = [
     declaration,
-    declaration ? "" : undefined,
+    declaration ? "" : null,
     `// Consider changing ${parameterName}: unknown to:`,
     `${parameterName}: ${replacementType}`
-  ].filter((line): line is string => line !== undefined).join("\n");
+  ].filter((line): line is string => line !== null).join("\n");
 
   const allEvidence = [
     ...evidence.evidence,
@@ -232,20 +236,30 @@ function renderSuggestion(
 export function inferUnknownParameter(
   parameter: ts.ParameterDeclaration,
   checker: ts.TypeChecker
-): BakeSuggestion | undefined {
-  if (!ts.isIdentifier(parameter.name)) return undefined;
-  const symbol = checker.getSymbolAtLocation(parameter.name);
-  if (!symbol) return undefined;
+): BakeSuggestion | null {
+  if (!ts.isIdentifier(parameter.name)) return null;
+  const symbol = checker.getSymbolAtLocation(parameter.name) ?? null;
+  if (!symbol) return null;
   const functionLike = parameter.parent;
-  if (!ts.isFunctionLike(functionLike) || !("body" in functionLike) || !functionLike.body) return undefined;
-  const functionBody = functionLike.body;
+  if (!ts.isFunctionLike(functionLike) || !("body" in functionLike)) return null;
+  const functionBody = functionLike.body ?? null;
+  if (!functionBody) return null;
 
   const evidence: UnknownEvidence = {
-    primitiveTypes: new Set(),
-    literalTypes: new Set(),
-    properties: new Map(),
+    primitiveTypes: new Set<string>(),
+    literalTypes: new Set<string>(),
+    properties: new Map<string, PropertyEvidence>(),
     arrayLike: false,
     evidence: []
+  };
+
+  const recordProperty = (node: ts.PropertyAccessExpression | ts.ElementAccessExpression): void => {
+    const property = propertyRoot(node, checker, symbol);
+    if (!property) return;
+    const record = ensureProperty(evidence, property.name);
+    const inferred = typeTextFromUse(node, checker);
+    if (inferred) record.types.add(inferred);
+    record.evidence.push(`property ${property.name} is accessed`);
   };
 
   const walk = (node: ts.Node): void => {
@@ -254,42 +268,36 @@ export function inferUnknownParameter(
     if (ts.isBinaryExpression(node)) {
       recordTypeofComparison(node, checker, symbol, evidence);
       recordLiteralComparison(node, checker, symbol, evidence);
-      if (node.operatorToken.kind === ts.SyntaxKind.InKeyword && ts.isStringLiteralLike(node.left) && refersToSymbol(node.right, checker, symbol)) {
-        const property = ensureProperty(evidence, node.left.text);
-        property.optional = false;
-        property.evidence.push(`${JSON.stringify(node.left.text)} in parameter`);
-      }
+    }
+    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.InKeyword && ts.isStringLiteralLike(node.left) && refersToSymbol(node.right, checker, symbol)) {
+      const property = ensureProperty(evidence, node.left.text);
+      property.optional = false;
+      property.evidence.push(`${JSON.stringify(node.left.text)} in parameter`);
     }
 
+    const firstArgument = ts.isCallExpression(node) ? node.arguments[0] ?? null : null;
     if (
       ts.isCallExpression(node) &&
       ts.isPropertyAccessExpression(node.expression) &&
       ts.isIdentifier(node.expression.expression) &&
       node.expression.expression.text === "Array" &&
       node.expression.name.text === "isArray" &&
-      node.arguments[0] &&
-      refersToSymbol(node.arguments[0], checker, symbol)
+      firstArgument &&
+      refersToSymbol(firstArgument, checker, symbol)
     ) {
       evidence.arrayLike = true;
       evidence.evidence.push("Array.isArray(parameter)");
     }
 
-    if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
-      const property = propertyRoot(node, checker, symbol);
-      if (property) {
-        const record = ensureProperty(evidence, property.name);
-        const inferred = typeTextFromUse(node, checker);
-        if (inferred) record.types.add(inferred);
-        record.evidence.push(`property ${property.name} is accessed`);
-      }
-    }
+    if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) recordProperty(node);
 
     ts.forEachChild(node, walk);
   };
   walk(functionBody);
 
-  const declarationName = functionLike.name && ts.isIdentifier(functionLike.name)
-    ? functionLike.name.text
+  const name = functionLike.name ?? null;
+  const declarationName = name && ts.isIdentifier(name)
+    ? name.text
     : ts.isVariableDeclaration(functionLike.parent) && ts.isIdentifier(functionLike.parent.name)
       ? functionLike.parent.name.text
       : "anonymous";

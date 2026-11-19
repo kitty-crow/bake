@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "dependencies": [
+    {
+      "repository": "kittycrow-kittyx/kittyx",
+      "path": "vendor/kittyx",
+      "commit": "197ecf36ff0aab9f9f038505c3339b6c41d555c6",
+      "tag": "v0.1.1"
+    }
+  ]
+}

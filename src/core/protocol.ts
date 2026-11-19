@@ -26,7 +26,7 @@ export const BAKE_DIAGNOSTIC_ANY: BakeWord = 1;
 export const BAKE_DIAGNOSTIC_UNKNOWN: BakeWord = 2;
 export const BAKE_DIAGNOSTIC_DYNAMIC_IMPORT: BakeWord = 3;
 export const BAKE_DIAGNOSTIC_AMBIENT_RUNTIME: BakeWord = 4;
-export const BAKE_DIAGNOSTIC_EXTERNAL_RUNTIME_IMPORT: BakeWord = 5;
+export const BAKE_DIAG_EXTERNAL_IMPORT: BakeWord = 5;
 export const BAKE_DIAGNOSTIC_ASYNC_CLOSURE: BakeWord = 6;
 export const BAKE_DIAGNOSTIC_GENERATOR: BakeWord = 7;
 export const BAKE_DIAGNOSTIC_EXCEPTION: BakeWord = 8;
@@ -85,7 +85,7 @@ export function decideBakeFact(
     case BAKE_FACT_AMBIENT_RUNTIME:
       return error(BAKE_DIAGNOSTIC_AMBIENT_RUNTIME);
     case BAKE_FACT_EXTERNAL_RUNTIME_IMPORT:
-      return error(BAKE_DIAGNOSTIC_EXTERNAL_RUNTIME_IMPORT);
+      return error(BAKE_DIAG_EXTERNAL_IMPORT);
     case BAKE_FACT_ASYNC_CLOSURE:
       return error(BAKE_DIAGNOSTIC_ASYNC_CLOSURE);
     case BAKE_FACT_GENERATOR:

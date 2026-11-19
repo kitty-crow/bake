@@ -2,8 +2,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { spawnSync } from "node:child_process";
+import ts from "typescript";
 import assert from "node:assert/strict";
-import { bake } from "../src/index";
+import { bake, DEFAULT_BAKE_SETTINGS } from "../src/index";
 import { createBakeCoreEngine } from "../src/core-engine";
 import {
   BAKE_ACTION_LOWER,
@@ -16,11 +18,11 @@ import {
   bakeDecisionPayload
 } from "../src/core/protocol";
 
-const repositoryRoot = path.resolve(__dirname, "../..");
+const repositoryRoot = path.resolve(__dirname, "..");
 const fixtureRoot = path.join(repositoryRoot, "test/fixtures");
 
 test("suggests a concrete shape for unknown", () => {
-  const result = bake({
+  const result = bake({ ...DEFAULT_BAKE_SETTINGS,
     project: path.join(fixtureRoot, "unknown", "tsconfig.json"),
     outDir: "out",
     validateOnly: true,
@@ -35,7 +37,7 @@ test("suggests a concrete shape for unknown", () => {
 test("lowers array for-of, destructuring and pure nullish coalescing", () => {
   const root = path.join(fixtureRoot, "lowering");
   fs.rmSync(path.join(root, "out"), { recursive: true, force: true });
-  const result = bake({
+  const result = bake({ ...DEFAULT_BAKE_SETTINGS,
     project: path.join(root, "tsconfig.json"),
     outDir: "out",
     validateOnly: false,
@@ -63,7 +65,7 @@ test("lowers long nullish chains with linear output growth", () => {
       `export function choose(value: number | null): number {\n  return ${chain} ?? 0;\n}\n`
     );
 
-    const result = bake({
+    const result = bake({ ...DEFAULT_BAKE_SETTINGS,
       project: path.join(root, "tsconfig.json"),
       outDir: "out",
       validateOnly: false,
@@ -90,7 +92,7 @@ test("passes Baguette-supported try and throw syntax through unchanged", () => {
       "export function positive(value: number): number {\n  try {\n    if (value < 0) throw new RangeError(\"negative\");\n    return value;\n  } finally {\n  }\n}\n"
     );
 
-    const result = bake({
+    const result = bake({ ...DEFAULT_BAKE_SETTINGS,
       project: path.join(root, "tsconfig.json"),
       outDir: "out",
       validateOnly: false,
@@ -107,7 +109,7 @@ test("passes Baguette-supported try and throw syntax through unchanged", () => {
 });
 
 test("rejects any and reports unsupported native features", () => {
-  const result = bake({
+  const result = bake({ ...DEFAULT_BAKE_SETTINGS,
     project: path.join(fixtureRoot, "unsupported", "tsconfig.json"),
     outDir: "out",
     validateOnly: true,
@@ -119,7 +121,7 @@ test("rejects any and reports unsupported native features", () => {
   assert.ok(!result.diagnostics.some(item => item.code === "BK2201"));
 });
 
-test("hosted core exposes the policy that is compiled to Wasm", () => {
+test("hosted core exposes the lowering policy", () => {
   const core = createBakeCoreEngine("host");
   const lower = core.decide(BAKE_FACT_NULLISH, 0, 4, 1);
   assert.equal(bakeDecisionAction(lower), BAKE_ACTION_LOWER);
@@ -132,28 +134,243 @@ test("hosted core exposes the policy that is compiled to Wasm", () => {
   assert.equal(bakeDecisionAction(exception), BAKE_ACTION_NONE);
 });
 
-test("Bake can bake its dependency-free core", () => {
-  const output = path.join(repositoryRoot, "build/test-self-host");
-  fs.rmSync(output, { recursive: true, force: true });
-  try {
-    const result = bake({
-      project: path.join(repositoryRoot, "tsconfig.core.json"),
-      outDir: "build/test-self-host",
-      validateOnly: false,
-      failOnWarnings: true,
-      engine: "host"
-    });
-    assert.equal(result.success, true);
-    assert.equal(result.engine, "host");
+test("retired Wasm engine is rejected", () => {
+  assert.throws(() => createBakeCoreEngine("wasm"), /retired/);
+});
 
-    const protocol = fs.readFileSync(path.join(output, "protocol.ts"), "utf8");
-    const entry = fs.readFileSync(path.join(output, "wasm-entry.ts"), "utf8");
-    assert.ok(!protocol.includes("typescript"));
-    assert.ok(!protocol.includes("node:"));
-    assert.ok(!entry.includes("node:"));
-    assert.ok(!protocol.includes("??"));
-    assert.ok(!entry.includes("??"));
+test("omitted target and explicit wasm target emit identical source", () => {
+  const root = path.join(fixtureRoot, "lowering");
+  const implicit = "out-implicit-wasm";
+  const explicit = "out-explicit-wasm";
+  try {
+    const defaults = bake({ ...DEFAULT_BAKE_SETTINGS,
+      project: path.join(root, "tsconfig.json"), outDir: implicit,
+      validateOnly: false, failOnWarnings: false, engine: "host"
+    });
+    const wasm = bake({ ...DEFAULT_BAKE_SETTINGS,
+      project: path.join(root, "tsconfig.json"), outDir: explicit,
+      validateOnly: false, failOnWarnings: false, engine: "host", target: "wasm"
+    });
+    assert.equal(defaults.success, true);
+    assert.equal(wasm.success, true);
+    assert.equal(defaults.target, "wasm");
+    assert.equal(wasm.target, "wasm");
+    assert.equal(
+      fs.readFileSync(path.join(root, implicit, "input.ts"), "utf8"),
+      fs.readFileSync(path.join(root, explicit, "input.ts"), "utf8")
+    );
+    const defaultManifest = JSON.parse(fs.readFileSync(path.join(root, implicit, "bake-manifest.json"), "utf8"));
+    assert.equal(defaultManifest.target.compiler, "Baguette");
   } finally {
-    fs.rmSync(output, { recursive: true, force: true });
+    fs.rmSync(path.join(root, implicit), { recursive: true, force: true });
+    fs.rmSync(path.join(root, explicit), { recursive: true, force: true });
+  }
+});
+
+test("clang target lowers loops, bindings, nullish and hoists statically bound functions", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "bake-clang-"));
+  try {
+    fs.writeFileSync(path.join(root, "tsconfig.json"), JSON.stringify({
+      compilerOptions: { strict: true, target: "ES2022", module: "ESNext", types: [] },
+      files: ["input.ts"]
+    }));
+    fs.writeFileSync(path.join(root, "input.ts"), [
+      "export const add = (a: number, b: number) => a + b;",
+      "export function calculate(values: number[], value: number | null): number {",
+      "  const [first, second] = values;",
+      "  let total = value ?? first ?? 0;",
+      "  for (const part of values) { total += part; }",
+      "  const extra = 3;",
+      "  return add(total, second + extra);",
+      "}"
+    ].join("\n") + "\n");
+    const result = bake({ ...DEFAULT_BAKE_SETTINGS,
+      project: path.join(root, "tsconfig.json"), outDir: "out", target: "clang",
+      validateOnly: false, failOnWarnings: true, engine: "host"
+    });
+    assert.equal(result.success, true, JSON.stringify(result.diagnostics));
+    assert.equal(result.target, "clang");
+    const emitted = fs.readFileSync(path.join(root, "out/input.ts"), "utf8");
+    assert.match(emitted, /export function add\(/);
+    assert.match(emitted, /const extra: number = 3/);
+    assert.match(emitted, /for \(let __bake_index_/);
+    assert.match(emitted, /__bake_destructure_/);
+    assert.ok(!emitted.includes("??"));
+    assert.ok(!emitted.includes("=>"));
+    assert.ok(!emitted.includes("for (const part of"));
+    const generated = ts.createProgram([path.join(root, "out/input.ts")], {
+      strict: true, target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext, types: []
+    });
+    const generatedErrors = ts.getPreEmitDiagnostics(generated);
+    assert.equal(generatedErrors.length, 0,
+      generatedErrors.map(d => ts.flattenDiagnosticMessageText(d.messageText, "\\n")).join("\\n"));
+    const manifest = JSON.parse(fs.readFileSync(path.join(root, "out/bake-manifest.json"), "utf8"));
+    assert.equal(manifest.target.backend, "clang");
+    assert.equal(manifest.target.freestanding, true);
+    assert.equal(manifest.target.format, "lowered-typescript");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("clang mode rejects exception and runtime-dependent constructs without emitting output", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "bake-clang-errors-"));
+  try {
+    fs.writeFileSync(path.join(root, "tsconfig.json"), JSON.stringify({
+      compilerOptions: { strict: true, target: "ES2022", module: "ESNext", types: [] },
+      files: ["input.ts"]
+    }));
+    fs.writeFileSync(path.join(root, "input.ts"), [
+      'export function run(): number {',
+      '  try { throw new Error("unavailable"); } catch { return 0; }',
+      '}'
+    ].join("\n") + "\n");
+    const clang = bake({ ...DEFAULT_BAKE_SETTINGS,
+      project: path.join(root, "tsconfig.json"), outDir: "out", target: "clang",
+      validateOnly: false, failOnWarnings: false, engine: "host"
+    });
+    assert.equal(clang.success, false);
+    assert.ok(clang.diagnostics.some(d => d.code === "BK4001"));
+    assert.equal(fs.existsSync(path.join(root, "out")), false);
+    const wasm = bake({ ...DEFAULT_BAKE_SETTINGS,
+      project: path.join(root, "tsconfig.json"), outDir: "out-wasm", target: "wasm",
+      validateOnly: true, failOnWarnings: false, engine: "host"
+    });
+    assert.ok(!wasm.diagnostics.some(d => d.code === "BK4001"));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("clang refuses to duplicate a side-effecting nullish operand", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "bake-clang-nullish-"));
+  try {
+    fs.writeFileSync(path.join(root, "tsconfig.json"), JSON.stringify({
+      compilerOptions: { strict: true, target: "ES2022", module: "ESNext", types: [] },
+      files: ["input.ts"]
+    }));
+    fs.writeFileSync(path.join(root, "input.ts"),
+      "declare function load(): number | null;\nexport function get(): number { return load() ?? 3; }\n");
+    const result = bake({ ...DEFAULT_BAKE_SETTINGS,
+      project: path.join(root, "tsconfig.json"), outDir: "out", target: "clang",
+      validateOnly: false, failOnWarnings: false, engine: "host"
+    });
+    assert.equal(result.success, false);
+    assert.ok(result.diagnostics.some(d => d.code === "BK3001"));
+    assert.equal(fs.existsSync(path.join(root, "out")), false);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("source and tooling directories contain no JavaScript source files", () => {
+  const inspect = (directory: string): void => {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const location = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name !== "out") inspect(location);
+      } else {
+        assert.doesNotMatch(entry.name, /\.(?:js|jsx|mjs|cjs)$/i, location);
+      }
+    }
+  };
+  for (const name of ["src", "scripts", "test"]) inspect(path.join(repositoryRoot, name));
+});
+
+test("CLI accepts both target forms, defaults to wasm and rejects invalid target values", { timeout: 30000 }, () => {
+  const cli = path.join(repositoryRoot, "src/cli.ts");
+  const project = path.join(fixtureRoot, "lowering/tsconfig.json");
+  const base = ["--project", project, "--validate-only", "--engine=host"];
+  const run = (...args: string[]) =>
+    spawnSync(process.execPath, [cli, ...base, ...args], { encoding: "utf8" });
+  const implicit = run();
+  const explicit = run("--target=wasm");
+  const clang = run("--target", "clang");
+  const rust = run("--target", "rust");
+  const rustEquals = run("--target=rust");
+  const invalid = run("--target=invalid");
+  const missing = run("--target");
+  assert.equal(implicit.status, 0, implicit.stderr);
+  assert.equal(explicit.status, 0, explicit.stderr);
+  assert.equal(clang.status, 0, clang.stderr);
+  assert.equal(implicit.stdout, explicit.stdout);
+  assert.match(clang.stdout, /ready for freestanding C backend validation/);
+  assert.equal(rust.status, 0, rust.stderr);
+  assert.equal(rustEquals.status, 0, rustEquals.stderr);
+  assert.equal(rust.stdout, rustEquals.stdout);
+  assert.match(rust.stdout, /ready for Crust validation/);
+  assert.equal(invalid.status, 1);
+  assert.match(invalid.stderr, /Invalid Bake target/);
+  assert.equal(missing.status, 1);
+  assert.match(missing.stderr, /Missing value for --target/);
+});
+
+test("rust and clang share native lowering and retain separate manifests", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "bake-rust-"));
+  try {
+    const project = path.join(root, "tsconfig.json");
+    fs.writeFileSync(project, JSON.stringify({
+      compilerOptions: { strict: true, target: "ES2022", module: "ESNext", types: [] },
+      files: ["input.ts"]
+    }));
+    fs.writeFileSync(path.join(root, "input.ts"), [
+      "export const read = (buffer: ArrayBuffer, at: number): bigint => {",
+      "  const view = new DataView(buffer);",
+      "  return BigInt.asUintN(64, view.getBigUint64(at, true));",
+      "};"
+    ].join("\n"));
+    const options = { project, validateOnly: false, failOnWarnings: true } as const;
+    for (const target of ["clang", "rust"] as const) {
+      const result = bake({ ...DEFAULT_BAKE_SETTINGS, ...options, target, outDir: target, reportFile: target + ".json" });
+      assert.equal(result.success, true, JSON.stringify(result.diagnostics));
+      assert.equal(result.target, target);
+      const generatedPath = path.join(root, target, "input.ts");
+      const output = fs.readFileSync(generatedPath, "utf8");
+      assert.match(output, /__bake_c_view_get_u64/);
+      assert.match(output, /__bake_c_as_uint_n/);
+      assert.doesNotMatch(output, /new DataView/);
+      const generated = ts.createProgram([generatedPath], {
+        strict: true, target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext, types: []
+      });
+      assert.equal(ts.getPreEmitDiagnostics(generated).length, 0);
+    }
+    const readOutput = (target: string, file: string): string =>
+      fs.readFileSync(path.join(root, target, file), "utf8");
+    assert.equal(readOutput("clang", "input.ts"), readOutput("rust", "input.ts"));
+    const clang = JSON.parse(readOutput("clang", "bake-manifest.json"));
+    const rust = JSON.parse(readOutput("rust", "bake-manifest.json"));
+    assert.equal(clang.target.backend, "clang");
+    assert.equal(clang.target.compiler, "C");
+    assert.deepEqual(rust.target, { ...clang.target, compiler: "Crust", backend: "rust" });
+    assert.equal(rust.target.intrinsicAbi, 1);
+    assert.equal(rust.target.freestanding, true);
+    const report = JSON.parse(fs.readFileSync(path.join(root, "rust.json"), "utf8"));
+    assert.match(report.target, /rust.*Crust/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("rust rejects the same unsafe constructs as clang", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "bake-rust-errors-"));
+  try {
+    const project = path.join(root, "tsconfig.json");
+    fs.writeFileSync(project, JSON.stringify({
+      compilerOptions: { strict: true, target: "ES2022", module: "ESNext", types: [] },
+      files: ["input.ts"]
+    }));
+    fs.writeFileSync(path.join(root, "input.ts"),
+      "declare function load(): number | null;\n" +
+      "export function get(): number { return load() ?? 3; }\n" +
+      "export function bad(): number { try { return 1; } finally {} }\n");
+    for (const target of ["clang", "rust"] as const) {
+      const result = bake({ ...DEFAULT_BAKE_SETTINGS, project, target, outDir: target, validateOnly: false, failOnWarnings: false });
+      assert.equal(result.success, false);
+      assert.ok(result.diagnostics.some(d => d.code === "BK3001" && d.severity === "error"));
+      assert.ok(result.diagnostics.some(d => d.code === "BK4001"));
+      assert.equal(fs.existsSync(path.join(root, target)), false);
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
   }
 });

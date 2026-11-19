@@ -1,50 +1,54 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 import path from "node:path";
 import type { BakeEngineMode } from "./core-engine";
 import { bake, printBakeResult } from "./index";
+import { parseBakeTarget } from "./target";
+import type { BakeTarget } from "./target";
 
-interface ParsedArgs {
-  project: string;
-  outDir: string;
-  validateOnly: boolean;
-  reportFile?: string;
-  failOnWarnings: boolean;
-  engine: BakeEngineMode;
-  wasmFile?: string;
-}
+import type { BakeConfig } from "./types";
 
-function valueAfter(args: string[], name: string): string | undefined {
-  const direct = args.find(argument => argument.startsWith(`${name}=`));
+function valueAfter(args: string[], name: string): string | null {
+  const direct = args.find(argument => argument.startsWith(`${name}=`)) ?? null;
   if (direct) return direct.slice(name.length + 1);
   const index = args.indexOf(name);
-  return index >= 0 ? args[index + 1] : undefined;
+  return index >= 0 ? args[index + 1] ?? null : null;
 }
 
 function engineAfter(args: string[]): BakeEngineMode {
-  const value = valueAfter(args, "--engine") ?? process.env.BAKE_ENGINE ?? "auto";
+  const value = valueAfter(args, "--engine") ?? (process.env.BAKE_ENGINE ?? "auto");
   if (value === "auto" || value === "host" || value === "wasm") return value;
   throw new Error(`Invalid Bake engine ${JSON.stringify(value)}. Expected auto, host or wasm.`);
 }
 
-function usage(): string {
-  return `Bake 0.2.0-dev\n\nUsage:\n  bake [--project tsconfig.json] [--out-dir build/bake]\n       [--validate-only] [--report bake-report.json] [--fail-on-warnings]\n       [--engine auto|wasm|host] [--wasm-file dist-wasm/bake-core.wasm]\n\nBake pre-compiles TypeScript into the deterministic subset accepted by\nBaguette. The auto engine uses the self-baked WebAssembly core when present\nand otherwise falls back to the identical hosted core.\n`;
+function targetAfter(args: string[]): BakeTarget {
+  const specified = args.some(arg => arg === "--target" || arg.startsWith("--target="));
+  const value = valueAfter(args, "--target");
+  if (specified && (!value || value.startsWith("--")))
+    throw new Error("Missing value for --target. Expected wasm, clang or rust.");
+  return parseBakeTarget(value ?? "wasm");
 }
 
-function parseArgs(args: string[]): ParsedArgs {
+function usage(): string {
+  return `Bake 1.0.0\n\nUsage:\n  bake [--project tsconfig.json] [--out-dir build/bake]\n       [--validate-only] [--report bake-report.json] [--fail-on-warnings]\n       [--engine auto|host]\n       [--target wasm|clang|rust]\n\nBake pre-compiles TypeScript into the deterministic subset accepted by\nBaguette by default (--target=wasm). --target=clang and --target=rust prepare the same\nfreestanding TypeScript subset for Croissant and Crust respectively. Bake runs directly on Bun.\n`;
+}
+
+function parseArgs(args: string[]): BakeConfig {
   if (args.includes("--help") || args.includes("-h")) {
     process.stdout.write(usage());
     process.exitCode = 0;
     throw new Error("__BAKE_HELP__");
   }
   const wasmFile = valueAfter(args, "--wasm-file");
+  const reportFile = valueAfter(args, "--report");
   return {
     project: path.resolve(valueAfter(args, "--project") ?? "tsconfig.json"),
     outDir: valueAfter(args, "--out-dir") ?? "build/bake",
     validateOnly: args.includes("--validate-only"),
-    reportFile: valueAfter(args, "--report"),
+    reportFile,
     failOnWarnings: args.includes("--fail-on-warnings"),
     engine: engineAfter(args),
-    wasmFile: wasmFile ? path.resolve(wasmFile) : undefined
+    target: targetAfter(args),
+    wasmFile: wasmFile ? path.resolve(wasmFile) : null
   };
 }
 
@@ -57,7 +61,7 @@ try {
   if (error instanceof Error && error.message === "__BAKE_HELP__") {
     // Help was printed intentionally.
   } else {
-    process.stderr.write(`Bake failed: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.stderr.write(`Bake failed: ${error instanceof Error ? error.message : "Non-Error value thrown by Bake"}\n`);
     process.exitCode = 1;
   }
 }

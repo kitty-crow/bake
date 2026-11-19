@@ -1,0 +1,79 @@
+name: Release
+
+on:
+  workflow_run:
+    workflows: [Lowerer validation]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: source-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish source release
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          fetch-depth: 0
+          submodules: recursive
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+      - name: Validate source
+        id: version
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$SOURCE_SHA"
+          gh api "repos/$GH_REPO/actions/runs?head_sha=$SOURCE_SHA&status=success&per_page=100" | jq -e --arg name "Lowerer validation" --arg sha "$SOURCE_SHA" 'any(.workflow_runs[]; .name == $name and .head_sha == $sha and .conclusion == "success")'
+          version="$(jq -r .version package.json)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          tag="v$version"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if gh release view "$tag" --repo "$GH_REPO" >/dev/null 2>&1; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Install dependencies
+        if: steps.version.outputs.publish == 'true'
+        run: |
+          if [[ -f bun.lock ]]; then bun install --frozen-lockfile --ignore-scripts; else bun install --ignore-scripts; fi
+      - name: Package distribution
+        if: steps.version.outputs.publish == 'true'
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: bash scripts/package-release.sh "$TAG"
+      - name: Generate checksums
+        if: steps.version.outputs.publish == 'true'
+        run: cd dist && sha256sum *.tar.gz > SHA256SUMS && sha256sum -c SHA256SUMS
+      - name: Publish release
+        if: steps.version.outputs.publish == 'true'
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$SOURCE_SHA"
+          ref="$(git ls-remote origin "refs/tags/$TAG^{}" | cut -f1)"
+          if [[ -z "$ref" ]]; then ref="$(git ls-remote origin "refs/tags/$TAG" | cut -f1)"; fi
+          if [[ -z "$ref" ]]; then
+            git -c user.name=github-actions -c user.email=41898282+github-actions[bot]@users.noreply.github.com tag -a "$TAG" "$SOURCE_SHA" -m "$TAG"
+            git push origin "refs/tags/$TAG"
+          else
+            test "$ref" = "$SOURCE_SHA"
+          fi
+          gh release create "$TAG" dist/*.tar.gz dist/SHA256SUMS --verify-tag --title "${GH_REPO##*/} $TAG" --generate-notes
